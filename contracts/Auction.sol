@@ -43,6 +43,14 @@ contract Auction {
        return funds;
     }
 
+    function getFundsForBidder(address b)
+        public
+        view
+        returns (uint)
+    {
+        return fundsByBidder[b];
+    }
+
     function getSecondHighestBid()
         public
         view
@@ -78,7 +86,7 @@ contract Auction {
         // grab the previous highest bid (before updating fundsByBidder, in case msg.sender is the
         // Bidder0 and is just increasing their maximum bid).
         uint highestBid = fundsByBidder[Bidder0];
-        assert(newBid >= highestBid);
+        require(newBid > highestBid, "Bid too low");
 
         fundsByBidder[msg.sender] = newBid;
 

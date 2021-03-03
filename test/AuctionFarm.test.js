@@ -265,6 +265,35 @@ contract('AuctionFactory', (accounts) => {
       assert(diff1 == 0)
     })
 
+    it('Check increase bid', async () => {
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      const bid2 = 10000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      await auction.placeBid({from: accounts[3], value: bid})
+      let x0 = await auction.getFundsForBidder(accounts[3])
+      assert(x0 == bid)
+      await auction.placeBid({from: accounts[3], value: bid2})
+      let x1 = await auction.getFundsForBidder(accounts[3])
+      assert(x1 == bid + bid2)
+    })
+
+    it('Check bid too low', async () => {
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      await auction.placeBid({from: accounts[3], value: bid})
+      await auction.placeBid({from: accounts[4], value: bid-1}).should.be.rejectedWith("Bid too low")
+      await auction.placeBid({from: accounts[4], value: bid}).should.be.rejectedWith("Bid too low")
+      await auction.placeBid({from: accounts[4], value: bid+1})
+      let x1 = await auction.getFundsForBidder(accounts[4])
+      assert(x1 == bid + 1)
+    })
+
   })
 })
 
