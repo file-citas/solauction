@@ -337,6 +337,16 @@ contract('AuctionFactory', (accounts) => {
       assert(x1 == bid + 1)
     })
 
+    it('Check bid too high', async () => {
+      let block = await web3.eth.getBlock('latest')
+      const bid = limit
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      await auction.placeBid({from: accounts[1], value: bid})
+      await auction.placeBid({from: accounts[4], value: bid+1}).should.be.rejectedWith("Over limit")
+    })
+
   })
 })
 
