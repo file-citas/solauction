@@ -4,6 +4,8 @@ contract Auction {
     address public owner;
     uint public endBlock;
     uint public funds;
+    uint public limit;
+    string public desc;
 
     // state
     bool public canceled; // auction was cancelled by owner (no more bids, everyone gets their money back)
@@ -18,14 +20,17 @@ contract Auction {
     event LogCanceled();
     event LogSettled();
 
-    constructor(address _owner, uint _endBlock, uint _funds) public {
-        require(_funds > 0, "Need Funds");
+    constructor(address _owner, uint _endBlock, uint _limit, string memory _desc) public payable {
+        require(msg.value > 0, "Need Funds");
+        require(_limit > 0, "Need Limit");
         require(_endBlock > block.number, "End time before now");
         require(_owner != address(0), "Invalid owner");
 
         owner = _owner;
         endBlock = _endBlock;
-        funds = _funds;
+        funds = msg.value;
+        limit = _limit;
+        desc = _desc;
         Bidder0 = address(0);
         Bidder1 = address(0);
     }
@@ -64,6 +69,7 @@ contract Auction {
     {
         // reject bids of 0 ETH
         require(msg.value > 0);
+        require(fundsByBidder[msg.sender] + msg.value <= limit, "Over limit");
 
         // calculate the user's total bid based on the current amount they've sent to the contract
         // plus whatever has been sent with this transaction
@@ -120,21 +126,22 @@ contract Auction {
         return true;
     }
 
-    function evaluate()
+    function evaluateAuction()
         onlyAfterEnd
         onlyNotCanceled
         public
         returns (bool success)
     {
-       require(Bidder0 != address(0), "No Bids yet");
-       uint magic = 2;
-       uint withdrawalAmount = funds / magic;
-       // transfer funds * oracle output [0,1] to highest bidder
-       assert(Bidder0.send(withdrawalAmount));
-       funds = 0;
-       emit LogEvaluate(msg.sender, Bidder0, withdrawalAmount);
-       // TODO: burn or transfer to some other entity
-       //require( burn(funds - withdrawalAmount));
+       if(msg.sender == Bidder0) {
+          uint magic = 2;
+          uint withdrawalAmount = funds / magic;
+          // transfer funds * oracle output [0,1] to highest bidder
+          assert(msg.sender.send(withdrawalAmount));
+          funds = 0;
+          emit LogEvaluate(msg.sender, Bidder0, withdrawalAmount);
+          // TODO: burn or transfer to some other entity
+          //require( burn(funds - withdrawalAmount));
+       }
        return true;
     }
 

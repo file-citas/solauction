@@ -7,8 +7,8 @@ contract AuctionFactory {
 
     event AuctionCreated(address auctionContract, address owner, uint numAuctions, address[] allAuctions);
 
-    function createAuction(uint endBlock) public payable {
-        Auction newAuction = new Auction(msg.sender, endBlock, msg.value);
+    function createAuction(uint endBlock, uint limit, string memory desc) public payable {
+        Auction newAuction = (new Auction).value(msg.value)(msg.sender, endBlock, limit, desc);
         auctions.push(address(newAuction));
         emit AuctionCreated(address(newAuction), msg.sender, auctions.length, auctions);
     }
