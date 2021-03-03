@@ -70,7 +70,7 @@ contract('AuctionFactory', (accounts) => {
       for (i = 0; i < 100000; i++) {
 	miner.mine()
 	let block2 = await web3.eth.getBlock('latest')
-	if(block2.number > block.number + 32) {
+	if(block2.number > block.number + endBlock) {
 	  break
 	}
       }
