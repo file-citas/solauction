@@ -19,8 +19,9 @@ contract Auction {
     event LogSettled();
 
     constructor(address _owner, uint _endBlock, uint _funds) public {
-        require(_endBlock > block.number);
-        require(_owner != address(0));
+        require(_funds > 0, "Need Funds");
+        require(_endBlock > block.number, "End time before now");
+        require(_owner != address(0), "Invalid owner");
 
         owner = _owner;
         endBlock = _endBlock;
@@ -106,6 +107,7 @@ contract Auction {
         public
         returns (bool success)
     {
+        require(Bidder0 != address(0), "No Bids yet");
         address withdrawalAccount;
         uint withdrawalAmount;
 
@@ -149,32 +151,31 @@ contract Auction {
         assert(msg.sender.send(withdrawalAmount));
 
         emit LogWithdrawal(msg.sender, withdrawalAccount, withdrawalAmount);
-
         return true;
     }
 
     modifier onlyOwner {
-        assert(msg.sender == owner);
+        require(msg.sender == owner, "not owner");
         _;
     }
 
     modifier onlyNotOwner {
-        assert(msg.sender != owner);
+        require(msg.sender != owner, "is owner");
         _;
     }
 
     modifier onlyBeforeEnd {
-        assert(block.number <= endBlock);
+        require(block.number <= endBlock, "ended");
         _;
     }
 
     modifier onlyNotCanceled {
-        assert(!canceled);
+        require(!canceled, "cancelled");
         _;
     }
 
     modifier onlyEnded {
-        assert(block.number > endBlock || canceled || settled);
+        require(block.number > endBlock || canceled || settled, "still running");
         _;
     }
 }
