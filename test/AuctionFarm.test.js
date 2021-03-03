@@ -195,69 +195,75 @@ contract('AuctionFactory', (accounts) => {
       assert(diff == 0, "Fail Withdraw: " + balance1 + " == " + (BigInt(balance0) - gas))
     })
 
-    //it('Check withdrawBid looser', async () => {
-    //  const bid = 100000000
-    //  await auctionFactory.createAuction(endBlock, limit, desc, {value: funds})
-    //  let auctions = await auctionFactory.allAuctions()
-    //  let auction = await Auction.at(auctions[auctions.length-1])
-    //  let gas = 0
-    //  let balance0 = await web3.eth.getBalance(accounts[3])
-    //  let r = await auction.placeBid({from: accounts[3], value: bid})
-    //  let tx = await web3.eth.getTransaction(r.tx)
-    //  gas += r.receipt.gasUsed * tx.gasPrice
-    //  let balance1 = await web3.eth.getBalance(accounts[3])
-    //  assert(balance1 == balance0 - bid - gas, "Fail Bid: " + balance1 + " == " + (balance0 - gas))
-    //  await auction.placeBid({from: accounts[4], value: bid+bid})
-    //  await auction.settleAuction()
-    //  r = await auction.withdraw({from: accounts[3]})
-    //  tx = await web3.eth.getTransaction(r.tx)
-    //  gas += r.receipt.gasUsed * tx.gasPrice
-    //  balance1 = await web3.eth.getBalance(accounts[3])
-    //  //console.log("tx: " + tx.hash)
-    //  //console.log("b0: " + balance0)
-    //  //console.log("b1: " + balance1)
-    //  //console.log("gp: " + gas)
-    //  //console.log("TEST: " + balance1 + " == " + (balance0 - gas))
-    //  assert(balance1 == balance0 - gas, "Fail Withdraw: " + balance1 + " == " + (balance0 - gas))
-    //})
+    it('Check withdrawBid looser', async () => {
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      let gas = 0n
+      let balance0 = await web3.eth.getBalance(accounts[3])
+      let r = await auction.placeBid({from: accounts[3], value: bid})
+      let tx = await web3.eth.getTransaction(r.tx)
+      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      let balance1 = await web3.eth.getBalance(accounts[3])
+      const diff0 = BigInt(balance1) - (BigInt(balance0) - BigInt(bid) - gas)
+      assert(diff0 == 0)
+      await auction.placeBid({from: accounts[4], value: bid+bid})
+      await auction.settleAuction()
+      r = await auction.withdraw({from: accounts[3]})
+      tx = await web3.eth.getTransaction(r.tx)
+      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      balance1 = await web3.eth.getBalance(accounts[3])
+      //console.log("tx: " + tx.hash)
+      //console.log("b0: " + balance0)
+      //console.log("b1: " + balance1)
+      //console.log("gp: " + gas)
+      //console.log("TEST: " + balance1 + " == " + (balance0 - gas))
+      const diff1 = BigInt(balance1) - (BigInt(balance0) - gas)
+      assert(diff1 == 0)
+    })
 
-    //it('Check withdrawBid Winner', async () => {
-    //  const bid = 100000000
-    //  const bid2 = 10000
-    //  await auctionFactory.createAuction(endBlock, limit, desc, {value: funds})
-    //  let auctions = await auctionFactory.allAuctions()
-    //  let auction = await Auction.at(auctions[auctions.length-1])
-    //  let gas = 0
+    it('Check withdrawBid Winner', async () => {
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      const bid2 = 10000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      let gas = 0n
 
-    //  await auction.placeBid({from: accounts[3], value: bid2})
+      await auction.placeBid({from: accounts[3], value: bid2})
 
-    //  let balance0 = await web3.eth.getBalance(accounts[4])
-    //  let r = await auction.placeBid({from: accounts[4], value: bid})
-    //  let tx = await web3.eth.getTransaction(r.tx)
-    //  gas += r.receipt.gasUsed * tx.gasPrice
+      let balance0 = await web3.eth.getBalance(accounts[4])
+      let r = await auction.placeBid({from: accounts[4], value: bid})
+      let tx = await web3.eth.getTransaction(r.tx)
+      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
 
-    //  let balance1 = await web3.eth.getBalance(accounts[4])
+      let balance1 = await web3.eth.getBalance(accounts[4])
 
-    //  //console.log("tx: " + tx.hash)
-    //  //console.log("b0: " + balance0)
-    //  //console.log("b1: " + balance1)
-    //  //console.log("gp: " + gas)
-    //  //console.log("TEST: " + balance1 + " == " + (balance0 - gas - bid))
+      //console.log("tx: " + tx.hash)
+      //console.log("b0: " + balance0)
+      //console.log("b1: " + balance1)
+      //console.log("gp: " + gas)
+      //console.log("TEST: " + balance1 + " == " + (balance0 - gas - bid))
+      const diff0 = BigInt(balance1) - (BigInt(balance0) - BigInt(bid) - gas)
 
-    //  assert(balance1 == balance0 - bid - gas, "Fail Bid: " + balance1 + " == " + (balance0 - gas - bid))
+      assert(diff0 == 0)
 
-    //  await auction.settleAuction()
-    //  r = await auction.withdraw({from: accounts[4]})
-    //  tx = await web3.eth.getTransaction(r.tx)
-    //  gas += r.receipt.gasUsed * tx.gasPrice
-    //  balance1 = await web3.eth.getBalance(accounts[4])
-    //  //console.log("tx: " + tx.hash)
-    //  //console.log("b0: " + balance0)
-    //  //console.log("b1: " + balance1)
-    //  //console.log("gp: " + gas)
-    //  //console.log("TEST: " + balance1 + " == " + (balance0 - gas - bid2))
-    //  assert(balance1 == balance0 - gas - bid2, "Fail Withdraw: " + balance1 + " == " + (balance0 - gas - bid2))
-    //})
+      await auction.settleAuction()
+      r = await auction.withdraw({from: accounts[4]})
+      tx = await web3.eth.getTransaction(r.tx)
+      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      balance1 = await web3.eth.getBalance(accounts[4])
+      //console.log("tx: " + tx.hash)
+      //console.log("b0: " + balance0)
+      //console.log("b1: " + balance1)
+      //console.log("gp: " + gas)
+      //console.log("TEST: " + balance1 + " == " + (balance0 - gas - bid2))
+      const diff1 = BigInt(balance1) - (BigInt(balance0) - BigInt(bid2) - gas)
+      assert(diff1 == 0)
+    })
 
   })
 })
