@@ -1,19 +1,24 @@
 const AuctionFactory = artifacts.require('AuctionFactory')
 const Auction = artifacts.require('Auction')
+const Miner = artifacts.require('Miner')
 
 require('chai')
   .use(require('chai-as-promised'))
   .should()
 
 contract('AuctionFactory', (accounts) => {
+  let miner;
   let auctionFactory
   let endBlock
   let funds
+
   before(async () => {
       endBlock = 1000
       funds = 8000000000
       auctionFactory = await AuctionFactory.new()
+      miner = await Miner.new()
   })
+
   describe('Auction Stuff', async () => {
     it('Check createAuction without funds', () => {
       auctionFactory.createAuction(endBlock, {from: accounts[0]}).should.be.rejectedWith("Need Funds")
@@ -25,26 +30,31 @@ contract('AuctionFactory', (accounts) => {
       assert.equal(auctions.length, 1)
     })
 
+    it('Check evaluateAuction', async () => {
+      var bids = []
+      bid  = 100000000
+      bid_step  = 100000000
+      for (i = 0; i < 3; i++) {
+	bids.push(bid+bid_step*i)
+      }
+      let block = await web3.eth.getBlock('latest')
+      await auctionFactory.createAuction(block.number + 32, {value: funds, from: accounts[0]})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      for (i = 0; i < 3; i++) {
+	await auction.placeBid({from: accounts[i+1], value: bids[i]})
+      }
+      for (i = 0; i < 32; i++) {
+	miner.mine()
+      }
+      auction.evaluate()
+    })
+
     //it('Check placeBid', async () => {
     //  const bid = 100000000
     //  await auctionFactory.createAuction(endBlock, {value: funds, from: accounts[0]})
     //  let auctions = await auctionFactory.allAuctions()
     //  let auction = await Auction.at(auctions[auctions.length-1])
-    //  //await web3.eth.getBalance(accounts[1]).then ((balance0) => {
-    //  //  console.log("b0: " + balance0)
-    //  //});
-    //    //auction.placeBid({from: accounts[1], value: bid}).then ((receipt) => {
-    //    //  console.log("b0: " + balance0)
-    //    //  let gasUsed = receipt.receipt.gasUsed;
-    //    //  let tx = web3.eth.getTransaction(receipt.tx);
-    //    //  let gasPrice = tx.gasPrice
-    //    //  let balance1 = web3.eth.getBalance(accounts[1])
-    //    //  console.log("b1: " + balance1)
-    //    //  console.log("gu: " + gasUsed)
-    //    //  console.log("gp: " + gasPrice)
-    //    //  console.log("TEST: " + balance1 + " == " + (balance0 - bid - gasUsed * gasPrice))
-    //    //});
-
     //  const balance0 = await web3.eth.getBalance(accounts[1])
     //  const receipt = await auction.placeBid({from: accounts[1], value: bid})
     //  const gasUsed = receipt.receipt.gasUsed;
@@ -61,38 +71,38 @@ contract('AuctionFactory', (accounts) => {
     //  assert(balance1 == balance0 - bid - gasUsed * gasPrice, "FAIL: " + balance1 + " != " + (balance0 - bid - gasUsed * gasPrice))
     //})
 
-    it('Check withdrawBid while running', async () => {
-      const bid = 100000000
-      await auctionFactory.createAuction(endBlock, {value: funds})
-      let auctions = await auctionFactory.allAuctions()
-      let auction = await Auction.at(auctions[auctions.length-1])
-      const balance0 = await web3.eth.getBalance(accounts[2])
-      await auction.placeBid({from: accounts[2], value: bid})
-      await auction.withdraw({from: accounts[2]}).should.be.rejectedWith("still running")
-    })
+    //it('Check withdrawBid while running', async () => {
+    //  const bid = 100000000
+    //  await auctionFactory.createAuction(endBlock, {value: funds})
+    //  let auctions = await auctionFactory.allAuctions()
+    //  let auction = await Auction.at(auctions[auctions.length-1])
+    //  const balance0 = await web3.eth.getBalance(accounts[2])
+    //  await auction.placeBid({from: accounts[2], value: bid})
+    //  await auction.withdraw({from: accounts[2]}).should.be.rejectedWith("still running")
+    //})
 
-    it('Check withdrawBid owner', async () => {
-      const bid = 100000000
-      await auctionFactory.createAuction(endBlock, {value: funds})
-      let auctions = await auctionFactory.allAuctions()
-      let auction = await Auction.at(auctions[auctions.length-1])
-      let gas = 0
-      let balance0 = await web3.eth.getBalance(accounts[0])
-      await auction.placeBid({from: accounts[3], value: bid})
-      await auction.placeBid({from: accounts[4], value: bid+bid})
-      let r = await auction.settleAuction()
-      let tx = await web3.eth.getTransaction(r.tx)
-      gas += r.receipt.gasUsed * tx.gasPrice
-      r = await auction.withdraw({from: accounts[0]})
-      tx = await web3.eth.getTransaction(r.tx)
-      gas += r.receipt.gasUsed * tx.gasPrice
-      let balance1 = await web3.eth.getBalance(accounts[0])
-      //console.log("b0: " + balance0)
-      //console.log("b1: " + balance1)
-      //console.log("gp: " + gas)
-      //console.log("TEST: " + balance1 + " == " + (balance0 - gas + bid))
-      assert(balance1 == balance0 - gas + bid, "Fail Withdraw: " + balance1 + " == " + (balance0 - gas + bid))
-    })
+    //it('Check withdrawBid owner', async () => {
+    //  const bid = 100000000
+    //  await auctionFactory.createAuction(endBlock, {value: funds})
+    //  let auctions = await auctionFactory.allAuctions()
+    //  let auction = await Auction.at(auctions[auctions.length-1])
+    //  let gas = 0
+    //  let balance0 = await web3.eth.getBalance(accounts[0])
+    //  await auction.placeBid({from: accounts[3], value: bid})
+    //  await auction.placeBid({from: accounts[4], value: bid+bid})
+    //  let r = await auction.settleAuction()
+    //  let tx = await web3.eth.getTransaction(r.tx)
+    //  gas += r.receipt.gasUsed * tx.gasPrice
+    //  r = await auction.withdraw({from: accounts[0]})
+    //  tx = await web3.eth.getTransaction(r.tx)
+    //  gas += r.receipt.gasUsed * tx.gasPrice
+    //  let balance1 = await web3.eth.getBalance(accounts[0])
+    //  //console.log("b0: " + balance0)
+    //  //console.log("b1: " + balance1)
+    //  //console.log("gp: " + gas)
+    //  //console.log("TEST: " + balance1 + " == " + (balance0 - gas + bid))
+    //  assert(balance1 == balance0 - gas + bid, "Fail Withdraw: " + balance1 + " == " + (balance0 - gas + bid))
+    //})
 
     //it('Check withdrawBid cancelled', async () => {
     //  const bid = 100000000

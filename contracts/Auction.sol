@@ -6,15 +6,15 @@ contract Auction {
     uint public funds;
 
     // state
-    bool public canceled;
-    bool public settled;
-    address public Bidder0;
-    address public Bidder1;
+    bool public canceled; // auction was cancelled by owner (no more bids, everyone gets their money back)
+    bool public settled; // auction was setteld by owner (no more bids, every looser gets theit money back, winner gets diff to second highest bid, owner gets second highest bid)
+    address payable public Bidder0; // highest bidder
+    address public Bidder1; // sencond highest bidder
     mapping(address => uint256) public fundsByBidder;
-    bool ownerHasWithdrawn;
 
     event LogBid(address bidder, uint bid, address Bidder0, uint highestBid);
     event LogWithdrawal(address withdrawer, address withdrawalAccount, uint amount);
+    event LogEvaluate(address withdrawer, address withdrawalAccount, uint amount);
     event LogCanceled();
     event LogSettled();
 
@@ -26,6 +26,24 @@ contract Auction {
         owner = _owner;
         endBlock = _endBlock;
         funds = _funds;
+        Bidder0 = address(0);
+        Bidder1 = address(0);
+    }
+
+    function getFunds()
+        public
+        view
+        returns (uint)
+    {
+       return funds;
+    }
+
+    function getSecondHighestBid()
+        public
+        view
+        returns (uint)
+    {
+        return fundsByBidder[Bidder1];
     }
 
     function getHighestBid()
@@ -44,7 +62,7 @@ contract Auction {
         onlyNotOwner
         returns (bool success)
     {
-        // reject payments of 0 ETH
+        // reject bids of 0 ETH
         require(msg.value > 0);
 
         // calculate the user's total bid based on the current amount they've sent to the contract
@@ -102,6 +120,24 @@ contract Auction {
         return true;
     }
 
+    function evaluate()
+        onlyAfterEnd
+        onlyNotCanceled
+        public
+        returns (bool success)
+    {
+       require(Bidder0 != address(0), "No Bids yet");
+       uint magic = 2;
+       uint withdrawalAmount = funds / magic;
+       // transfer funds * oracle output [0,1] to highest bidder
+       assert(Bidder0.send(withdrawalAmount));
+       funds = 0;
+       emit LogEvaluate(msg.sender, Bidder0, withdrawalAmount);
+       // TODO: burn or transfer to some other entity
+       //require( burn(funds - withdrawalAmount));
+       return true;
+    }
+
     function withdraw()
         onlyEnded
         public
@@ -116,17 +152,14 @@ contract Auction {
             withdrawalAccount = msg.sender;
             withdrawalAmount = fundsByBidder[withdrawalAccount];
         } else {
-            // @Nik: What does the owner get?
-            // In a normal auction it would be the last bid, but how does that tie in with the predictions?
             if (msg.sender == owner) {
-                // Owner gets second highest (or highest if there is only one bid) bit
+                // Owner gets second highest (or highest if there is only one bid) bid
                 if(Bidder1 == address(0)) {
                    withdrawalAccount = Bidder0;
                 } else {
                    withdrawalAccount = Bidder1;
                 }
                 withdrawalAmount = fundsByBidder[Bidder1];
-                ownerHasWithdrawn = true;
             } else if (msg.sender == Bidder0) {
                 // highest bidder gets diff to second highest bid back
                 withdrawalAccount = Bidder0;
@@ -134,6 +167,8 @@ contract Auction {
                 if(Bidder1 == address(0)) {
                    withdrawalAmount = fundsByBidder[Bidder0];
                 } else {
+                   // Sth. went wrong second bid is higher then first?
+                   assert(fundsByBidder[Bidder0] > fundsByBidder[Bidder1]);
                    withdrawalAmount = fundsByBidder[Bidder0] - fundsByBidder[Bidder1];
                 }
             } else {
@@ -166,6 +201,11 @@ contract Auction {
 
     modifier onlyBeforeEnd {
         require(block.number <= endBlock, "ended");
+        _;
+    }
+
+    modifier onlyAfterEnd {
+        require(block.number > endBlock, "not ended");
         _;
     }
 
