@@ -26,14 +26,30 @@ contract('AuctionFactory', (accounts) => {
   describe('Auction Stuff', async () => {
     it('Check createAuction without funds', async () => {
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, limit, {from: accounts[0]}).should.be.rejectedWith("Need Funds")
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {from: accounts[0]}).should.be.rejectedWith("Need Funds")
     })
 
-    it('Check createAuction', async () => {
+    it('Check createAuction without limit', async () => {
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      await auctionFactory.createAuction(block.number + endBlock, 0, desc, {value: funds, from: accounts[0]}).should.be.rejectedWith("Need Limit")
+    })
+
+    it('Check createAuction wrong timeout', async () => {
+      let block = await web3.eth.getBlock('latest')
+      await auctionFactory.createAuction(block.number, limit, desc, {value: funds, from: accounts[0]}).should.be.rejectedWith("End time before now")
+    })
+
+    it('Check createAuctions', async () => {
+      let block = await web3.eth.getBlock('latest')
+      const n_auc = 16
+      for(i = 0; i<n_auc; i++) {
+        await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+        let auctions = await auctionFactory.allAuctions()
+        assert.equal(auctions.length, i+1)
+        await auctionFactory.createAuction(block.number, limit, desc, {value: funds, from: accounts[0]}).should.be.rejectedWith("End time before now")
+      }
       let auctions = await auctionFactory.allAuctions()
-      assert.equal(auctions.length, 1)
+      assert.equal(auctions.length, n_auc)
     })
 
     it('Check evaluateAuction', async () => {

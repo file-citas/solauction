@@ -23,7 +23,7 @@ contract Auction {
     constructor(address _owner, uint _endBlock, uint _limit, string memory _desc) public payable {
         require(msg.value > 0, "Need Funds");
         require(_limit > 0, "Need Limit");
-        require(_endBlock > block.number, "End time before now");
+        require(_endBlock >= block.number, "End time before now");
         require(_owner != address(0), "Invalid owner");
 
         owner = _owner;
