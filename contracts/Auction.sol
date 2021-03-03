@@ -8,12 +8,12 @@ contract Auction {
     // state
     bool public canceled;
     bool public settled;
-    uint public highestBindingBid;
-    address public highestBidder;
+    address public Bidder0;
+    address public Bidder1;
     mapping(address => uint256) public fundsByBidder;
     bool ownerHasWithdrawn;
 
-    event LogBid(address bidder, uint bid, address highestBidder, uint highestBid, uint highestBindingBid);
+    event LogBid(address bidder, uint bid, address Bidder0, uint highestBid);
     event LogWithdrawal(address withdrawer, address withdrawalAccount, uint amount);
     event LogCanceled();
     event LogSettled();
@@ -32,7 +32,7 @@ contract Auction {
         view
         returns (uint)
     {
-        return fundsByBidder[highestBidder];
+        return fundsByBidder[Bidder0];
     }
 
     function placeBid()
@@ -51,24 +51,20 @@ contract Auction {
         uint newBid = fundsByBidder[msg.sender] + msg.value;
 
         // grab the previous highest bid (before updating fundsByBidder, in case msg.sender is the
-        // highestBidder and is just increasing their maximum bid).
-        uint highestBid = fundsByBidder[highestBidder];
+        // Bidder0 and is just increasing their maximum bid).
+        uint highestBid = fundsByBidder[Bidder0];
         assert(newBid >= highestBid);
 
         fundsByBidder[msg.sender] = newBid;
 
-        // if msg.sender is already the highest bidder, they must simply be wanting to raise
-        // their maximum bid, in which case we shouldn't increase the highestBindingBid.
-
-        // if the user is NOT highestBidder, and has overbid highestBid completely, we set them
-        // as the new highestBidder and recalculate highestBindingBid.
-
-        if (msg.sender != highestBidder) {
-           highestBidder = msg.sender;
+        if (msg.sender != Bidder0) {
+           // store second highest bid
+           Bidder1 = Bidder0;
+           Bidder0 = msg.sender;
         }
         highestBid = newBid;
 
-        emit LogBid(msg.sender, newBid, highestBidder, highestBid, highestBindingBid);
+        emit LogBid(msg.sender, newBid, Bidder0, highestBid);
         return true;
     }
 
@@ -117,26 +113,27 @@ contract Auction {
             // if the auction was canceled, everyone should simply be allowed to withdraw their funds
             withdrawalAccount = msg.sender;
             withdrawalAmount = fundsByBidder[withdrawalAccount];
-
         } else {
-            // the auction finished without being canceled
-
+            // @Nik: What does the owner get?
+            // In a normal auction it would be the last bid, but how does that tie in with the predictions?
             if (msg.sender == owner) {
-                // the auction's owner should be allowed to withdraw the highestBindingBid
-                withdrawalAccount = highestBidder;
-                withdrawalAmount = highestBindingBid;
-                ownerHasWithdrawn = true;
-
-            } else if (msg.sender == highestBidder) {
-                // the highest bidder should only be allowed to withdraw the difference between their
-                // highest bid and the highestBindingBid
-                withdrawalAccount = highestBidder;
-                if (ownerHasWithdrawn) {
-                    withdrawalAmount = fundsByBidder[highestBidder];
+                // Owner gets second highest (or highest if there is only one bid) bit
+                if(Bidder1 == address(0)) {
+                   withdrawalAccount = Bidder0;
                 } else {
-                    withdrawalAmount = fundsByBidder[highestBidder] - highestBindingBid;
+                   withdrawalAccount = Bidder1;
                 }
-
+                withdrawalAmount = fundsByBidder[Bidder1];
+                ownerHasWithdrawn = true;
+            } else if (msg.sender == Bidder0) {
+                // highest bidder gets diff to second highest bid back
+                withdrawalAccount = Bidder0;
+                // if there is only one big, the bidder has to pay that?
+                if(Bidder1 == address(0)) {
+                   withdrawalAmount = fundsByBidder[Bidder0];
+                } else {
+                   withdrawalAmount = fundsByBidder[Bidder0] - fundsByBidder[Bidder1];
+                }
             } else {
                 // anyone who participated but did not win the auction should be allowed to withdraw
                 // the full amount of their funds
@@ -145,9 +142,8 @@ contract Auction {
             }
         }
 
-        assert(withdrawalAmount != 0);
-
-        fundsByBidder[withdrawalAccount] -= withdrawalAmount;
+        // after withdraw no one should have any more funds
+        fundsByBidder[withdrawalAccount] = 0;
 
         // send the funds
         assert(msg.sender.send(withdrawalAmount));
