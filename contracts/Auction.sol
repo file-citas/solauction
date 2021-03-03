@@ -72,6 +72,7 @@ contract Auction {
         payable
         onlyBeforeEnd
         onlyNotCanceled
+        onlyNotSettled
         onlyNotOwner
         returns (bool success)
     {
@@ -226,6 +227,11 @@ contract Auction {
 
     modifier onlyNotCanceled {
         require(!canceled, "cancelled");
+        _;
+    }
+
+    modifier onlyNotSettled {
+        require(!settled, "settled");
         _;
     }
 

@@ -66,6 +66,8 @@ contract('AuctionFactory', (accounts) => {
         gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
       }
 
+      await auction.evaluateAuction({from: accounts[n_acc+1]}).should.be.rejectedWith("not ended")
+
       // wait till auction end
       for (i = 0; i < 100000; i++) {
         miner.mine()
@@ -129,6 +131,47 @@ contract('AuctionFactory', (accounts) => {
       const gas = (gasPrice * gasUsed)
       const cmp = BigInt(balance0) - BigInt(gas) - BigInt(highestBid)
       assert(balance1 == cmp, "FAIL: " + balance1 + " != " + (balance0 - bid - gasUsed * gasPrice))
+    })
+
+    it('Check placeBid after cancel', async () => {
+      const balance0 = await web3.eth.getBalance(accounts[1])
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      auction.cancelAuction()
+      await auction.placeBid({from: accounts[1], value: bid}).should.be.rejectedWith("cancelled")
+    })
+
+    it('Check placeBid after settle', async () => {
+      const balance0 = await web3.eth.getBalance(accounts[1])
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+      auction.settleAuction()
+      await auction.placeBid({from: accounts[1], value: bid}).should.be.rejectedWith("settled")
+    })
+
+    it('Check placeBid after end', async () => {
+      const balance0 = await web3.eth.getBalance(accounts[1])
+      let block = await web3.eth.getBlock('latest')
+      const bid = 100000000
+      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+
+      // wait till auction end
+      for (i = 0; i < 100000; i++) {
+        miner.mine()
+        let block2 = await web3.eth.getBlock('latest')
+        if(block2.number > block.number + endBlock) {
+          break
+        }
+      }
+      await auction.placeBid({from: accounts[1], value: bid}).should.be.rejectedWith("ended")
     })
 
     it('Check withdrawBid while running', async () => {
