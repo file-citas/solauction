@@ -11,7 +11,7 @@ contract('AuctionFactory', (accounts) => {
   let auctionFactory
   let endBlock
   let limit
-  let desc
+  let advAsked
   let funds
 
   before(async () => {
@@ -20,33 +20,33 @@ contract('AuctionFactory', (accounts) => {
       auctionFactory = await AuctionFactory.new()
       miner = await Miner.new()
       limit = 800000000000
-      desc = "TEST AUCTION"
+      advAsked = "Please Advice" // to be replaced with actual ipfs hash
   })
 
   describe('Auction Stuff', async () => {
     it('Check createAuction without funds', async () => {
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {from: accounts[0]}).should.be.rejectedWith("Need Funds")
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {from: accounts[0]}).should.be.rejectedWith("Need Funds")
     })
 
     it('Check createAuction without limit', async () => {
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, 0, desc, {value: funds, from: accounts[0]}).should.be.rejectedWith("Need Limit")
+      await auctionFactory.createAuction(block.number + endBlock, 0, advAsked, {value: funds, from: accounts[0]}).should.be.rejectedWith("Need Limit")
     })
 
     it('Check createAuction wrong timeout', async () => {
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number, limit, desc, {value: funds, from: accounts[0]}).should.be.rejectedWith("End time before now")
+      await auctionFactory.createAuction(block.number, limit, advAsked, {value: funds, from: accounts[0]}).should.be.rejectedWith("End time before now")
     })
 
     it('Check createAuctions', async () => {
       let block = await web3.eth.getBlock('latest')
       const n_auc = 16
       for(i = 0; i<n_auc; i++) {
-        await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+        await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds, from: accounts[0]})
         let auctions = await auctionFactory.allAuctions()
         assert.equal(auctions.length, i+1)
-        await auctionFactory.createAuction(block.number, limit, desc, {value: funds, from: accounts[0]}).should.be.rejectedWith("End time before now")
+        await auctionFactory.createAuction(block.number, limit, advAsked, {value: funds, from: accounts[0]}).should.be.rejectedWith("End time before now")
       }
       let auctions = await auctionFactory.allAuctions()
       assert.equal(auctions.length, n_auc)
@@ -65,7 +65,7 @@ contract('AuctionFactory', (accounts) => {
         gas.push(BigInt(0))
       }
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds, from: accounts[0]})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
 
@@ -82,7 +82,7 @@ contract('AuctionFactory', (accounts) => {
         gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
       }
 
-      await auction.evaluateAuction({from: accounts[n_acc+1]}).should.be.rejectedWith("not ended")
+      await auction.evaluateAuction("my advice", {from: accounts[n_acc+1]}).should.be.rejectedWith("not ended")
 
       // wait till auction end
       for (i = 0; i < 100000; i++) {
@@ -107,7 +107,7 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
-        let r = await auction.evaluateAuction({from: accounts[i+1]})
+        let r = await auction.evaluateAuction("my advice " + (i+1), {from: accounts[i+1]})
         let tx = await web3.eth.getTransaction(r.tx)
         gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
       }
@@ -126,6 +126,8 @@ contract('AuctionFactory', (accounts) => {
 	}
       }
 
+      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
+      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc))})
       f = await auction.getFunds()
       assert(f==0)
     })
@@ -134,7 +136,7 @@ contract('AuctionFactory', (accounts) => {
       const balance0 = await web3.eth.getBalance(accounts[1])
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds, from: accounts[0]})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       const receipt = await auction.placeBid({from: accounts[1], value: bid})
@@ -153,7 +155,7 @@ contract('AuctionFactory', (accounts) => {
       const balance0 = await web3.eth.getBalance(accounts[1])
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds, from: accounts[0]})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       auction.cancelAuction()
@@ -164,7 +166,7 @@ contract('AuctionFactory', (accounts) => {
       const balance0 = await web3.eth.getBalance(accounts[1])
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds, from: accounts[0]})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       auction.settleAuction()
@@ -175,7 +177,7 @@ contract('AuctionFactory', (accounts) => {
       const balance0 = await web3.eth.getBalance(accounts[1])
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds, from: accounts[0]})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds, from: accounts[0]})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
 
@@ -193,7 +195,7 @@ contract('AuctionFactory', (accounts) => {
     it('Check withdrawBid while running', async () => {
       const bid = 100000000
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       const balance0 = await web3.eth.getBalance(accounts[2])
@@ -204,7 +206,7 @@ contract('AuctionFactory', (accounts) => {
     it('Check withdrawBid owner', async () => {
       const bid = 100000000
       let block = await web3.eth.getBlock('latest')
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       let gas = 0n
@@ -229,7 +231,7 @@ contract('AuctionFactory', (accounts) => {
     it('Check withdrawBid cancelled', async () => {
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       let gas = 0n
@@ -257,7 +259,7 @@ contract('AuctionFactory', (accounts) => {
     it('Check withdrawBid looser', async () => {
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       let gas = 0n
@@ -287,7 +289,7 @@ contract('AuctionFactory', (accounts) => {
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
       const bid2 = 10000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       let gas = 0n
@@ -328,7 +330,7 @@ contract('AuctionFactory', (accounts) => {
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
       const bid2 = 10000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       await auction.placeBid({from: accounts[3], value: bid})
@@ -342,7 +344,7 @@ contract('AuctionFactory', (accounts) => {
     it('Check bid too low', async () => {
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       await auction.placeBid({from: accounts[3], value: bid})
@@ -356,7 +358,7 @@ contract('AuctionFactory', (accounts) => {
     it('Check bid too high', async () => {
       let block = await web3.eth.getBlock('latest')
       const bid = limit
-      await auctionFactory.createAuction(block.number + endBlock, limit, desc, {value: funds})
+      await auctionFactory.createAuction(block.number + endBlock, limit, advAsked, {value: funds})
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       await auction.placeBid({from: accounts[1], value: bid})

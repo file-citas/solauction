@@ -5,7 +5,8 @@ contract Auction {
     uint public endBlock;
     uint public funds;
     uint public limit;
-    string public desc;
+    string public ipfsHashAdvAsked;
+    string public ipfsHashAdvGiven;
 
     // state
     bool public canceled; // auction was cancelled by owner (no more bids, everyone gets their money back)
@@ -20,7 +21,7 @@ contract Auction {
     event LogCanceled();
     event LogSettled();
 
-    constructor(address _owner, uint _endBlock, uint _limit, string memory _desc) public payable {
+    constructor(address _owner, uint _endBlock, uint _limit, string memory _ipfsHashAdvAsked) public payable {
         require(msg.value > 0, "Need Funds");
         require(_limit > 0, "Need Limit");
         require(_endBlock >= block.number, "End time before now");
@@ -30,7 +31,7 @@ contract Auction {
         endBlock = _endBlock;
         funds = msg.value;
         limit = _limit;
-        desc = _desc;
+        ipfsHashAdvAsked = _ipfsHashAdvAsked;
         Bidder0 = address(0);
         Bidder1 = address(0);
     }
@@ -135,7 +136,7 @@ contract Auction {
         return true;
     }
 
-    function evaluateAuction()
+    function evaluateAuction(string memory _ipfsHashAdvGiven)
         onlyAfterEnd
         onlyNotCanceled
         public
@@ -147,6 +148,7 @@ contract Auction {
           // transfer funds * oracle output [0,1] to highest bidder
           assert(msg.sender.send(withdrawalAmount));
           funds = 0;
+          ipfsHashAdvGiven = _ipfsHashAdvGiven;
           emit LogEvaluate(msg.sender, Bidder0, withdrawalAmount);
           // TODO: burn or transfer to some other entity
           //require( burn(funds - withdrawalAmount));
