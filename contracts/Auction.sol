@@ -11,6 +11,7 @@ contract Auction {
     // state
     bool public canceled; // auction was cancelled by owner (no more bids, everyone gets their money back)
     bool public settled; // auction was setteld by owner (no more bids, every looser gets theit money back, winner gets diff to second highest bid, owner gets second highest bid)
+    bool public adviced; // winner can only give advice once
     address payable public Bidder0; // highest bidder
     address public Bidder1; // sencond highest bidder
     mapping(address => uint256) public fundsByBidder;
@@ -142,13 +143,17 @@ contract Auction {
         public
         returns (bool success)
     {
+       // I guess checks on the advice hash are unneccessary since it is in the winners best interest to give valid advice?
+       // also: should the winner be allowed to change the advice
        if(msg.sender == Bidder0) {
+          require(!adviced, "already adviced");
           uint magic = 2;
           uint withdrawalAmount = funds / magic;
           // transfer funds * oracle output [0,1] to highest bidder
           assert(msg.sender.send(withdrawalAmount));
           funds = 0;
           ipfsHashAdvGiven = _ipfsHashAdvGiven;
+          adviced = true;
           emit LogEvaluate(msg.sender, Bidder0, withdrawalAmount);
           // TODO: burn or transfer to some other entity
           //require( burn(funds - withdrawalAmount));

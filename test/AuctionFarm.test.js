@@ -128,6 +128,7 @@ contract('AuctionFactory', (accounts) => {
 
       auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
       auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc))})
+      await auction.evaluateAuction("my new advice", {from: accounts[n_acc]}).should.be.rejectedWith("already adviced")
       f = await auction.getFunds()
       assert(f==0)
     })
