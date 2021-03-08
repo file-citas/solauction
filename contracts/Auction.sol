@@ -16,12 +16,6 @@ contract Auction {
     address public Bidder1; // sencond highest bidder
     mapping(address => uint256) public fundsByBidder;
 
-    event LogBid(address bidder, uint bid, address Bidder0, uint highestBid);
-    event LogWithdrawal(address withdrawer, address withdrawalAccount, uint amount);
-    event LogEvaluate(address withdrawer, address withdrawalAccount, uint amount);
-    event LogCanceled();
-    event LogSettled();
-
     constructor(address _owner, uint _endBlock, uint _limit, string memory _ipfsHashAdvAsked) public payable {
         require(msg.value > 0, "Need Funds");
         require(_limit > 0, "Need Limit");
@@ -100,7 +94,6 @@ contract Auction {
         }
         highestBid = newBid;
 
-        emit LogBid(msg.sender, newBid, Bidder0, highestBid);
         return true;
     }
 
@@ -121,7 +114,6 @@ contract Auction {
         returns (bool success)
     {
         settled = true;
-        emit LogSettled();
         return true;
     }
 
@@ -133,7 +125,6 @@ contract Auction {
         returns (bool success)
     {
         canceled = true;
-        emit LogCanceled();
         return true;
     }
 
@@ -154,7 +145,6 @@ contract Auction {
           funds = 0;
           ipfsHashAdvGiven = _ipfsHashAdvGiven;
           adviced = true;
-          emit LogEvaluate(msg.sender, Bidder0, withdrawalAmount);
           // TODO: burn or transfer to some other entity
           //require( burn(funds - withdrawalAmount));
        }
@@ -208,7 +198,6 @@ contract Auction {
         // send the funds
         assert(msg.sender.send(withdrawalAmount));
 
-        emit LogWithdrawal(msg.sender, withdrawalAccount, withdrawalAmount);
         return true;
     }
 
