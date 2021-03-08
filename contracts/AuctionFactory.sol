@@ -5,8 +5,8 @@ import { Auction } from './Auction.sol';
 contract AuctionFactory {
     address[] public auctions;
 
-    function createAuction(uint endBlock, uint limit, string memory ipfsHashAdvAsked) public payable {
-        Auction newAuction = (new Auction).value(msg.value)(msg.sender, endBlock, limit, ipfsHashAdvAsked);
+    function createAuction(uint endBlock, uint reserve, uint limit, string memory ipfsHashAdvAsked) public payable {
+        Auction newAuction = (new Auction).value(msg.value)(msg.sender, endBlock, reserve, limit, ipfsHashAdvAsked);
         auctions.push(address(newAuction));
     }
 
