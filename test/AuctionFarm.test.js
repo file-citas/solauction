@@ -118,8 +118,14 @@ contract('AuctionFactory', (accounts) => {
         gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
       }
 
+      // report result
+      auction.reportResult(highestBid/2)
+      auction.result.call().then(function (res) {console.log("Result: " + res)})
+      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
+        console.log("A" + i)
         let r = await auction.evaluateAuction("my advice " + (i+1), {from: accounts[i+1]})
         let tx = await web3.eth.getTransaction(r.tx)
         gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)

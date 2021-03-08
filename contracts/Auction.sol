@@ -1,11 +1,17 @@
 pragma solidity >=0.4.22 <0.9.0;
 
+import "@openzeppelin/contracts/math/SafeMath.sol";
+
 contract Auction {
+   using SafeMath for uint256;
+   uint256 constant divfact = 10000;
    address public owner;
    uint public endBlock;
    uint public funds;
    uint public reserve;
    uint public limit;
+   uint public result; // the outcome
+   uint256 public rewardPerc; // the reward percentage based on outcome [0;1]
    string public ipfsHashAdvAsked;
    string public ipfsHashAdvGiven;
 
@@ -15,6 +21,7 @@ contract Auction {
    bool public adviced; // winner can only give advice once
    bool public ownerHasWithdrawn; // owner should only get money once
    bool public winnerHasWithdrawn; // winner should only get money once
+   bool public resultReported; // owner can only report the result once
    uint public Bid0; // highest Bid
    uint public Bid1; // 2nd highest Bid
    address payable public Bidder0; // highest bidder
@@ -36,6 +43,8 @@ contract Auction {
       Bid1 = 0;
       Bid0 = 0;
       Bidder0 = address(0);
+      result = 0;
+      rewardPerc = 0;
    }
 
    function getFunds()
@@ -102,6 +111,15 @@ contract Auction {
          return true;
       }
 
+   function min(uint a, uint b)
+      private
+      pure
+      returns (uint)
+      {
+         if (a < b) return a;
+         return b;
+      }
+
    function max(uint a, uint b)
       private
       pure
@@ -133,9 +151,30 @@ contract Auction {
          return true;
       }
 
+   function reportResult(uint256 _result)
+      onlyOwner
+      onlyAfterEnd
+      onlyBeforeResultReported
+      onlyNotCanceled
+      onlyReserveMet
+      public
+      returns (bool success)
+      {
+         require(_result >= reserve, "Result below reserve");
+         require(_result < limit, "Result over limit");
+         result = _result;
+         // TODO: How to calculate the factor?
+         // penalize only in one direction?
+         rewardPerc = uint256(min(Bid0, result)).mul(divfact).div(uint256(Bid0));
+         resultReported = true;
+         return true;
+      }
+
    function evaluateAuction(string memory _ipfsHashAdvGiven)
       onlyAfterEnd
+      onlyAfterResultReported
       onlyNotCanceled
+      onlyReserveMet
       public
       returns (bool success)
       {
@@ -143,9 +182,7 @@ contract Auction {
          // also: should the winner be allowed to change the advice
          if(msg.sender == Bidder0) {
             require(!adviced, "already adviced");
-            uint magic = 2;
-            uint withdrawalAmount = funds / magic;
-            // transfer funds * oracle output [0,1] to highest bidder
+            uint256 withdrawalAmount = rewardPerc.mul(uint256(funds)).div(divfact);
             assert(msg.sender.send(withdrawalAmount));
             funds = 0;
             ipfsHashAdvGiven = _ipfsHashAdvGiven;
@@ -222,8 +259,23 @@ contract Auction {
       _;
    }
 
+   modifier onlyReserveMet {
+      require(Bid0 > reserve, "reserve not met");
+      _;
+   }
+
    modifier onlyNotCanceled {
       require(!canceled, "cancelled");
+      _;
+   }
+
+   modifier onlyBeforeResultReported {
+      require(!resultReported, "already have result");
+      _;
+   }
+
+   modifier onlyAfterResultReported {
+      require(resultReported, "no result");
       _;
    }
 
