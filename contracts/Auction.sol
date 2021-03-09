@@ -1,9 +1,6 @@
 pragma solidity >=0.4.22 <0.9.0;
 
-import "@openzeppelin/contracts/math/SafeMath.sol";
-
 contract Auction {
-   using SafeMath for uint256;
    uint256 constant divfact = 10000;
    address public owner;
    uint public endBlock;
@@ -26,7 +23,7 @@ contract Auction {
    bool public winnerHasWithdrawn; // winner should only get money once
    bool public resultReported; // owner can only report the result once
 
-   constructor(address _owner, uint _endBlock, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) public payable {
+   constructor(address _owner, uint _endBlock, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable {
       require(msg.value > 0, "Need Funds");
       require(_limit > 0, "Need Limit");
       require(_limit>_reserve, "Limit under reserve");
@@ -41,7 +38,7 @@ contract Auction {
       ipfsHashAdvAsked = _ipfsHashAdvAsked;
       bid1 = 0;
       bid0 = 0;
-      bidder0 = address(0);
+      bidder0 = payable(0);
       result = 0;
       rewardPerc = 0;
    }
@@ -69,7 +66,7 @@ contract Auction {
             if(bidder0 != address(0)) {
                bid1 = fundsByBidder[bidder0];
             }
-            bidder0 = msg.sender;
+            bidder0 = payable(msg.sender);
          }
          fundsByBidder[msg.sender] = newBid;
          bid0 = fundsByBidder[bidder0];
@@ -118,7 +115,7 @@ contract Auction {
          result = _result;
          // TODO: How to calculate the factor?
          // penalize only in one direction?
-         rewardPerc = uint256(min(bid0, result)).mul(divfact).div(uint256(bid0));
+         rewardPerc = uint256(min(bid0, result))*(divfact)/(uint256(bid0));
          resultReported = true;
          return true;
       }
@@ -133,8 +130,8 @@ contract Auction {
          // I guess checks on the advice hash are unneccessary since it is in the winners best interest to give valid advice?
          // also: should the winner be allowed to change the advice?
          if(!adviced && msg.sender == bidder0) {
-            uint256 withdrawalAmount = rewardPerc.mul(uint256(funds)).div(divfact);
-            assert(msg.sender.send(withdrawalAmount));
+            uint256 withdrawalAmount = rewardPerc*(uint256(funds))/(divfact);
+            assert(payable(msg.sender).send(withdrawalAmount));
             funds = 0;
             ipfsHashAdvGiven = _ipfsHashAdvGiven;
             adviced = true;
@@ -184,7 +181,7 @@ contract Auction {
          fundsByBidder[withdrawalAccount] -= withdrawalAmount;
 
          // send the funds
-         assert(msg.sender.send(withdrawalAmount));
+         assert(payable(msg.sender).send(withdrawalAmount));
 
          return true;
       }
