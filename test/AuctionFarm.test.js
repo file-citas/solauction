@@ -191,6 +191,188 @@ contract('AuctionFactory', (accounts) => {
       assert(f==0)
     })
 
+    it('Check evaluateAuction reserve 0', async () => {
+      var n_acc = 4
+      var bids = []
+      var balances0 = []
+      var balances1 = []
+      var gas = []
+      bid  = 100000000
+      bid_step  = 100000000
+      for (i = 0; i < n_acc; i++) {
+        bids.push(bid+bid_step*i)
+        gas.push(BigInt(0))
+      }
+      let block = await web3.eth.getBlock('latest')
+      await auctionFactory.createAuction(block.number + endBlock, 0, limit, advAsked, {value: funds, from: accounts[0]})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+
+      // get initial balances
+      for (i = 0; i < n_acc; i++) {
+        balances0[i] = await web3.eth.getBalance(accounts[i+1])
+      }
+
+      // place bids
+      for (i = 0; i < n_acc; i++) {
+        console.log("A" + (i+1) + ": bid " + bids[i])
+        let r = await auction.placeBid({from: accounts[i+1], value: bids[i]})
+        let tx = await web3.eth.getTransaction(r.tx)
+        gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      }
+
+      await auction.evaluateAuction("my advice", {from: accounts[n_acc+1]}).should.be.rejectedWith("not ended")
+
+      // wait till auction end
+      for (i = 0; i < 100000; i++) {
+        miner.mine()
+        let block2 = await web3.eth.getBlock('latest')
+        if(block2.number > block.number + endBlock) {
+          break
+        }
+      }
+
+      let highestBid = await getHighestBid(auction)
+      let highestBid2 = await getSecondHighestBid(auction)
+      console.log("Highest Bid: " + highestBid)
+      console.log("2nd Highest Bid: " + highestBid2)
+      let f = await getFunds(auction)
+      console.log("Funds: " + f)
+
+      // withdraw bids
+      for (i = 0; i < n_acc; i++) {
+        let r = await auction.withdraw({from: accounts[i+1]})
+        let tx = await web3.eth.getTransaction(r.tx)
+        gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      }
+
+      // report result
+      let res = await getReserve(auction)
+      console.log("Reserve: " + res)
+      auction.reportResult(highestBid/2)
+      auction.result.call().then(function (res) {console.log("Result: " + res)})
+      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+
+      // evaluate auction
+      for (i = 0; i < n_acc; i++) {
+        let r = await auction.evaluateAuction("my advice " + (i+1), {from: accounts[i+1]})
+        let tx = await web3.eth.getTransaction(r.tx)
+        gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      }
+
+      for (i = 0; i < n_acc; i++) {
+        balances1[i] = await web3.eth.getBalance(accounts[i+1])
+      }
+
+      for (i = 0; i < n_acc; i++) {
+	const diff  = BigInt(balances0[i]) - BigInt(balances1[i]) - gas[i]
+        console.log("A" + (i+1) + " :" + diff);
+	if(i!=n_acc-1) {
+	  assert(diff == 0)
+	} else {
+	  assert(-diff == BigInt(funds/2) - BigInt(highestBid2),
+            "FAIL: " + (-diff) + " == " + (funds/2) + " - " + highestBid + " + " + highestBid2)
+	}
+      }
+
+      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
+      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc))})
+      f = await getFunds(auction)
+      assert(f==0)
+    })
+
+
+    it('Check evaluateAuction reserve 3rd', async () => {
+      var n_acc = 4
+      var bids = []
+      var balances0 = []
+      var balances1 = []
+      var gas = []
+      bid  = 100000000
+      bid_step  = 100000000
+      for (i = 0; i < n_acc; i++) {
+        bids.push(bid+bid_step*i)
+        gas.push(BigInt(0))
+      }
+      let block = await web3.eth.getBlock('latest')
+      await auctionFactory.createAuction(block.number + endBlock, bids[2], limit, advAsked, {value: funds, from: accounts[0]})
+      let auctions = await auctionFactory.allAuctions()
+      let auction = await Auction.at(auctions[auctions.length-1])
+
+      // get initial balances
+      for (i = 0; i < n_acc; i++) {
+        balances0[i] = await web3.eth.getBalance(accounts[i+1])
+      }
+
+      // place bids
+      for (i = 0; i < n_acc; i++) {
+        console.log("A" + (i+1) + ": bid " + bids[i])
+        let r = await auction.placeBid({from: accounts[i+1], value: bids[i]})
+        let tx = await web3.eth.getTransaction(r.tx)
+        gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      }
+
+      await auction.evaluateAuction("my advice", {from: accounts[n_acc+1]}).should.be.rejectedWith("not ended")
+
+      // wait till auction end
+      for (i = 0; i < 100000; i++) {
+        miner.mine()
+        let block2 = await web3.eth.getBlock('latest')
+        if(block2.number > block.number + endBlock) {
+          break
+        }
+      }
+
+      let highestBid = await getHighestBid(auction)
+      let highestBid2 = await getSecondHighestBid(auction)
+      console.log("Highest Bid: " + highestBid)
+      console.log("2nd Highest Bid: " + highestBid2)
+      let f = await getFunds(auction)
+      console.log("Funds: " + f)
+
+      // withdraw bids
+      for (i = 0; i < n_acc; i++) {
+        let r = await auction.withdraw({from: accounts[i+1]})
+        let tx = await web3.eth.getTransaction(r.tx)
+        gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      }
+
+      // report result
+      let res = await getReserve(auction)
+      console.log("Reserve: " + res)
+      let perc = 0.9
+      auction.reportResult(highestBid*perc)
+      auction.result.call().then(function (res) {console.log("Result: " + res)})
+      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+
+      // evaluate auction
+      for (i = 0; i < n_acc; i++) {
+        let r = await auction.evaluateAuction("my advice " + (i+1), {from: accounts[i+1]})
+        let tx = await web3.eth.getTransaction(r.tx)
+        gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
+      }
+
+      for (i = 0; i < n_acc; i++) {
+        balances1[i] = await web3.eth.getBalance(accounts[i+1])
+      }
+
+      for (i = 0; i < n_acc; i++) {
+	const diff  = BigInt(balances0[i]) - BigInt(balances1[i]) - gas[i]
+        console.log("A" + (i+1) + " :" + diff);
+	if(i!=n_acc-1) {
+	  assert(diff == 0)
+	} else {
+	  assert(-diff == BigInt(funds*perc) - BigInt(highestBid2),
+            "FAIL: " + (-diff) + " == " + (funds*perc) + " - " + highestBid + " + " + highestBid2)
+	}
+      }
+
+      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
+      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc))})
+      f = await getFunds(auction)
+      assert(f==0)
+    })
+
     it('Check placeBid', async () => {
       const balance0 = await web3.eth.getBalance(accounts[1])
       let block = await web3.eth.getBlock('latest')
