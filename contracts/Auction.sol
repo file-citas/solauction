@@ -14,18 +14,17 @@ contract Auction {
    uint256 public rewardPerc; // the reward percentage based on outcome [0;1]
    string public ipfsHashAdvAsked;
    string public ipfsHashAdvGiven;
+   uint public bid0; // highest Bid
+   uint public bid1; // 2nd highest Bid
+   address payable public bidder0; // highest bidder
+   mapping(address => uint256) public fundsByBidder;
 
    // state
-   bool public canceled; // auction was cancelled by owner (no more bids, everyone gets their money back)
    bool public settled; // auction was setteld by owner (no more bids, every looser gets theit money back, winner gets diff to second highest bid, owner gets second highest bid)
    bool public adviced; // winner can only give advice once
    bool public ownerHasWithdrawn; // owner should only get money once
    bool public winnerHasWithdrawn; // winner should only get money once
    bool public resultReported; // owner can only report the result once
-   uint public Bid0; // highest Bid
-   uint public Bid1; // 2nd highest Bid
-   address payable public Bidder0; // highest bidder
-   mapping(address => uint256) public fundsByBidder;
 
    constructor(address _owner, uint _endBlock, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) public payable {
       require(msg.value > 0, "Need Funds");
@@ -40,73 +39,40 @@ contract Auction {
       reserve = _reserve;
       limit = _limit;
       ipfsHashAdvAsked = _ipfsHashAdvAsked;
-      Bid1 = 0;
-      Bid0 = 0;
-      Bidder0 = address(0);
+      bid1 = 0;
+      bid0 = 0;
+      bidder0 = address(0);
       result = 0;
       rewardPerc = 0;
    }
-
-   function getFunds()
-      public
-      view
-      returns (uint)
-      {
-         return funds;
-      }
-
-   function getFundsForBidder(address b)
-      public
-      view
-      returns (uint)
-      {
-         return fundsByBidder[b];
-      }
-
-   function getSecondHighestBid()
-      public
-      view
-      returns (uint)
-      {
-         return Bid1;
-      }
-
-   function getHighestBid()
-      public
-      view
-      returns (uint)
-      {
-         return fundsByBidder[Bidder0];
-      }
 
    function placeBid()
       public
       payable
       onlyBeforeEnd
-      onlyNotCanceled
       onlyNotSettled
       onlyNotOwner
       returns (bool success)
       {
          // reject bids of 0 ETH
-         require(msg.value > 0);
+         require(msg.value > 0, "Bid too low");
          require(fundsByBidder[msg.sender] + msg.value <= limit, "Over limit");
 
          // calculate the user's total bid based on the current amount they've sent to the contract
          // plus whatever has been sent with this transaction
          uint newBid = fundsByBidder[msg.sender] + msg.value;
 
-         require(newBid > Bid0, "Bid too low");
+         require(newBid > bid0, "Bid too low");
 
-         if (msg.sender != Bidder0) {
+         if (msg.sender != bidder0) {
             // store second highest bid, but only once we have two bidders
-            if(Bidder0 != address(0)) {
-               Bid1 = fundsByBidder[Bidder0];
+            if(bidder0 != address(0)) {
+               bid1 = fundsByBidder[bidder0];
             }
-            Bidder0 = msg.sender;
+            bidder0 = msg.sender;
          }
          fundsByBidder[msg.sender] = newBid;
-         Bid0 = fundsByBidder[Bidder0];
+         bid0 = fundsByBidder[bidder0];
 
          return true;
       }
@@ -132,7 +98,6 @@ contract Auction {
    function settleAuction()
       onlyOwner
       onlyBeforeEnd
-      onlyNotCanceled
       public
       returns (bool success)
       {
@@ -140,22 +105,10 @@ contract Auction {
          return true;
       }
 
-   function cancelAuction()
-      onlyOwner
-      onlyBeforeEnd
-      onlyNotCanceled
-      public
-      returns (bool success)
-      {
-         canceled = true;
-         return true;
-      }
-
    function reportResult(uint256 _result)
       onlyOwner
       onlyAfterEnd
       onlyBeforeResultReported
-      onlyNotCanceled
       onlyReserveMet
       public
       returns (bool success)
@@ -165,7 +118,7 @@ contract Auction {
          result = _result;
          // TODO: How to calculate the factor?
          // penalize only in one direction?
-         rewardPerc = uint256(min(Bid0, result)).mul(divfact).div(uint256(Bid0));
+         rewardPerc = uint256(min(bid0, result)).mul(divfact).div(uint256(bid0));
          resultReported = true;
          return true;
       }
@@ -173,15 +126,13 @@ contract Auction {
    function evaluateAuction(string memory _ipfsHashAdvGiven)
       onlyAfterEnd
       onlyAfterResultReported
-      onlyNotCanceled
       onlyReserveMet
       public
       returns (bool success)
       {
          // I guess checks on the advice hash are unneccessary since it is in the winners best interest to give valid advice?
-         // also: should the winner be allowed to change the advice
-         if(msg.sender == Bidder0) {
-            require(!adviced, "already adviced");
+         // also: should the winner be allowed to change the advice?
+         if(!adviced && msg.sender == bidder0) {
             uint256 withdrawalAmount = rewardPerc.mul(uint256(funds)).div(divfact);
             assert(msg.sender.send(withdrawalAmount));
             funds = 0;
@@ -198,29 +149,28 @@ contract Auction {
       public
       returns (bool success)
       {
-         require(Bidder0 != address(0), "No Bids yet");
-         require(Bid0 > Bid1, "Sth went wrong");
+         require(bidder0 != address(0), "No Bids yet");
+         require(bid0 > bid1, "Sth went wrong");
          address withdrawalAccount;
          uint withdrawalAmount;
 
-         if (canceled || fundsByBidder[Bidder0] < reserve) {
-            // if the auction was canceled, everyone should simply be allowed to withdraw their funds
-            // auctions that did not reach the reserve price are treated as if cancelled
-            withdrawalAccount = msg.sender;
-            withdrawalAmount = fundsByBidder[withdrawalAccount];
+         // if reserve is not met, everyone gets their money back
+         if (reserve > bid0) {
+               withdrawalAccount = msg.sender;
+               withdrawalAmount = fundsByBidder[withdrawalAccount];
          } else {
             if (msg.sender == owner) {
-               // Owner gets second highest (can only do that once)
+               // Owner gets second highest
                if(!ownerHasWithdrawn) {
-                  withdrawalAccount = Bidder0;
-                  withdrawalAmount = max(reserve, Bid1);
+                  withdrawalAccount = bidder0;
+                  withdrawalAmount = max(reserve, bid1);
                   ownerHasWithdrawn = true;
                }
-            } else if (msg.sender == Bidder0) {
+            } else if (msg.sender == bidder0) {
                // highest bidder gets diff to second highest bid back
                if(!winnerHasWithdrawn) {
-                  withdrawalAccount = Bidder0;
-                  withdrawalAmount = Bid0 - max(reserve, Bid1);
+                  withdrawalAccount = bidder0;
+                  withdrawalAmount = bid0 - max(reserve, bid1);
                   winnerHasWithdrawn = true;
                }
             } else {
@@ -260,12 +210,7 @@ contract Auction {
    }
 
    modifier onlyReserveMet {
-      require(Bid0 > reserve, "reserve not met");
-      _;
-   }
-
-   modifier onlyNotCanceled {
-      require(!canceled, "cancelled");
+      require(bid0 > reserve, "reserve not met");
       _;
    }
 
@@ -285,7 +230,7 @@ contract Auction {
    }
 
    modifier onlyEnded {
-      require(block.number > endBlock || canceled || settled, "still running");
+      require(block.number > endBlock || settled, "still running");
       _;
    }
 }

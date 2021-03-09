@@ -25,6 +25,31 @@ contract('AuctionFactory', (accounts) => {
       advAsked = "Please Advice" // to be replaced with actual ipfs hash
   })
 
+  async function getHighestBid(auction) {
+    let ret = await auction.bid0.call()
+    return ret
+  }
+
+  async function getSecondHighestBid(auction) {
+    let ret = await auction.bid1.call()
+    return ret
+  }
+
+  async function getFunds(auction) {
+    let ret = await auction.funds.call()
+    return ret
+  }
+
+  async function getReserve(auction) {
+    let ret = await auction.reserve.call()
+    return ret
+  }
+
+  async function getFundsForBidder(auction, bidder) {
+    let ret = await auction.fundsByBidder.call(bidder)
+    return ret
+  }
+
   describe('Auction Stuff', async () => {
     it('Check createAuction without funds', async () => {
       let block = await web3.eth.getBlock('latest')
@@ -59,7 +84,20 @@ contract('AuctionFactory', (accounts) => {
       assert.equal(auctions.length, n_auc)
       for(i = 0; i<n_auc; i++) {
         let auction = await Auction.at(auctions[i])
-        auction.reserve.call().then(function (res) { assert(res == reserve, "FAIL: " + res + " == " + reserve)})
+        auction.owner.call().then(function (res) { assert(res == accounts[0])})
+        auction.endBlock.call().then(function (res) { assert(res == block.number + endBlock)})
+        auction.funds.call().then(function (res) { assert(res == funds)})
+        auction.reserve.call().then(function (res) { assert(res == reserve)})
+        auction.limit.call().then(function (res) { assert(res == limit)})
+        auction.result.call().then(function (res) { assert(res == 0)})
+        auction.rewardPerc.call().then(function (res) { assert(res == 0)})
+        auction.settled.call().then(function (res) { assert(!res)})
+        auction.adviced.call().then(function (res) { assert(!res)})
+        auction.ownerHasWithdrawn.call().then(function (res) { assert(!res)})
+        auction.winnerHasWithdrawn.call().then(function (res) { assert(!res)})
+        auction.resultReported.call().then(function (res) { assert(!res)})
+        auction.bid0.call().then(function (res) { assert(res == 0)})
+        auction.bid1.call().then(function (res) { assert(res == 0)})
       }
     })
 
@@ -104,11 +142,11 @@ contract('AuctionFactory', (accounts) => {
         }
       }
 
-      let highestBid = await auction.getHighestBid()
-      let highestBid2 = await auction.getSecondHighestBid()
+      let highestBid = await getHighestBid(auction)
+      let highestBid2 = await getSecondHighestBid(auction)
       console.log("Highest Bid: " + highestBid)
       console.log("2nd Highest Bid: " + highestBid2)
-      let f = await auction.getFunds()
+      let f = await getFunds(auction)
       console.log("Funds: " + f)
 
       // withdraw bids
@@ -119,13 +157,14 @@ contract('AuctionFactory', (accounts) => {
       }
 
       // report result
+      let res = await getReserve(auction)
+      console.log("Reserve: " + res)
       auction.reportResult(highestBid/2)
       auction.result.call().then(function (res) {console.log("Result: " + res)})
       auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
-        console.log("A" + i)
         let r = await auction.evaluateAuction("my advice " + (i+1), {from: accounts[i+1]})
         let tx = await web3.eth.getTransaction(r.tx)
         gas[i] += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
@@ -148,8 +187,7 @@ contract('AuctionFactory', (accounts) => {
 
       auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
       auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc))})
-      await auction.evaluateAuction("my new advice", {from: accounts[n_acc]}).should.be.rejectedWith("already adviced")
-      f = await auction.getFunds()
+      f = await getFunds(auction)
       assert(f==0)
     })
 
@@ -161,7 +199,7 @@ contract('AuctionFactory', (accounts) => {
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       const receipt = await auction.placeBid({from: accounts[1], value: bid})
-      let highestBid = await auction.getHighestBid()
+      let highestBid = await getHighestBid(auction)
       assert(highestBid == bid)
       const gasUsed = receipt.receipt.gasUsed;
       const tx = await web3.eth.getTransaction(receipt.tx);
@@ -170,17 +208,6 @@ contract('AuctionFactory', (accounts) => {
       const gas = (gasPrice * gasUsed)
       const cmp = BigInt(balance0) - BigInt(gas) - BigInt(highestBid)
       assert(balance1 == cmp, "FAIL: " + balance1 + " != " + (balance0 - bid - gasUsed * gasPrice))
-    })
-
-    it('Check placeBid after cancel', async () => {
-      const balance0 = await web3.eth.getBalance(accounts[1])
-      let block = await web3.eth.getBlock('latest')
-      const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, reserve, limit, advAsked, {value: funds, from: accounts[0]})
-      let auctions = await auctionFactory.allAuctions()
-      let auction = await Auction.at(auctions[auctions.length-1])
-      auction.cancelAuction()
-      await auction.placeBid({from: accounts[1], value: bid}).should.be.rejectedWith("cancelled")
     })
 
     it('Check placeBid after settle', async () => {
@@ -405,61 +432,6 @@ contract('AuctionFactory', (accounts) => {
       assert(diff == 0n, "Fail Withdraw 4: " + balance14 + " == " + balance04 + " - " + gas4 + " - " + reserve)
     })
 
-    it('Check withdraw cancelled', async () => {
-      let block = await web3.eth.getBlock('latest')
-      const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, reserve, limit, advAsked, {value: funds})
-      let auctions = await auctionFactory.allAuctions()
-      let auction = await Auction.at(auctions[auctions.length-1])
-      let gas = 0n
-      let balance0 = await web3.eth.getBalance(accounts[3])
-      let r = await auction.placeBid({from: accounts[3], value: bid})
-      let tx = await web3.eth.getTransaction(r.tx)
-      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
-      let balance1 = await web3.eth.getBalance(accounts[3])
-      const diff0 = BigInt(balance1) - (BigInt(balance0) - BigInt(bid) - BigInt(gas))
-      assert(diff0 == 0)
-      await auction.cancelAuction()
-      r = await auction.withdraw({from: accounts[3]})
-      tx = await web3.eth.getTransaction(r.tx)
-      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
-      balance1 = await web3.eth.getBalance(accounts[3])
-      const diff = BigInt(balance1) - (BigInt(balance0) - BigInt(gas))
-      //console.log("tx: " + tx.hash)
-      //console.log("b0: " + balance0)
-      //console.log("b1: " + balance1)
-      //console.log("gp: " + gas)
-      //console.log("TEST: " + balance1 + " == " + (balance0 - gas))
-      assert(diff == 0, "Fail Withdraw: " + balance1 + " == " + (BigInt(balance0) - gas))
-    })
-
-    it('Check withdraw cancelled twice', async () => {
-      let block = await web3.eth.getBlock('latest')
-      const bid = 100000000
-      await auctionFactory.createAuction(block.number + endBlock, reserve, limit, advAsked, {value: funds})
-      let auctions = await auctionFactory.allAuctions()
-      let auction = await Auction.at(auctions[auctions.length-1])
-      let gas = 0n
-      let balance0 = await web3.eth.getBalance(accounts[3])
-      let r = await auction.placeBid({from: accounts[3], value: bid})
-      let tx = await web3.eth.getTransaction(r.tx)
-      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
-      let balance1 = await web3.eth.getBalance(accounts[3])
-      const diff0 = BigInt(balance1) - (BigInt(balance0) - BigInt(bid) - BigInt(gas))
-      assert(diff0 == 0)
-      await auction.cancelAuction()
-      r = await auction.withdraw({from: accounts[3]})
-      tx = await web3.eth.getTransaction(r.tx)
-      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
-      r = await auction.withdraw({from: accounts[3]})
-      tx = await web3.eth.getTransaction(r.tx)
-      gas += BigInt(r.receipt.gasUsed) * BigInt(tx.gasPrice)
-      balance1 = await web3.eth.getBalance(accounts[3])
-      balance1 = await web3.eth.getBalance(accounts[3])
-      const diff = BigInt(balance1) - (BigInt(balance0) - BigInt(gas))
-      assert(diff == 0, "Fail Withdraw: " + balance1 + " == " + (BigInt(balance0) - gas))
-    })
-
     it('Check withdraw looser twice', async () => {
       let block = await web3.eth.getBlock('latest')
       const bid = 100000000
@@ -590,10 +562,10 @@ contract('AuctionFactory', (accounts) => {
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       await auction.placeBid({from: accounts[3], value: bid})
-      let x0 = await auction.getFundsForBidder(accounts[3])
+      let x0 = await getFundsForBidder(auction, accounts[3])
       assert(x0 == bid)
       await auction.placeBid({from: accounts[3], value: bid2})
-      let x1 = await auction.getFundsForBidder(accounts[3])
+      let x1 = await getFundsForBidder(auction, accounts[3])
       assert(x1 == bid + bid2)
     })
 
@@ -607,7 +579,7 @@ contract('AuctionFactory', (accounts) => {
       await auction.placeBid({from: accounts[4], value: bid-1}).should.be.rejectedWith("Bid too low")
       await auction.placeBid({from: accounts[4], value: bid}).should.be.rejectedWith("Bid too low")
       await auction.placeBid({from: accounts[4], value: bid+1})
-      let x1 = await auction.getFundsForBidder(accounts[4])
+      let x1 = await getFundsForBidder(auction, accounts[4])
       assert(x1 == bid + 1)
     })
 
@@ -628,15 +600,15 @@ contract('AuctionFactory', (accounts) => {
       let auctions = await auctionFactory.allAuctions()
       let auction = await Auction.at(auctions[auctions.length-1])
       await auction.placeBid({from: accounts[3], value: bid})
-      auction.Bid1.call().then(function (res) { assert(res == 0, "FAIL: 2nd bid: " + "0  == " + res)})
+      auction.bid1.call().then(function (res) { assert(res == 0, "FAIL: 2nd bid: " + "0  == " + res)})
       await auction.placeBid({from: accounts[3], value: 1})
-      auction.Bid1.call().then(function (res) { assert(res == 0, "FAIL: 2nd bid: " + "0 == " + res)})
+      auction.bid1.call().then(function (res) { assert(res == 0, "FAIL: 2nd bid: " + "0 == " + res)})
       await auction.placeBid({from: accounts[4], value: bid+2})
-      auction.Bid1.call().then(function (res) { assert(res == bid+1, "FAIL: 2nd bid: " + (bid+1) + " == " + res)})
+      auction.bid1.call().then(function (res) { assert(res == bid+1, "FAIL: 2nd bid: " + (bid+1) + " == " + res)})
       await auction.placeBid({from: accounts[4], value: 1})
-      auction.Bid1.call().then(function (res) { assert(res == bid+1, "FAIL: 2nd bid: " + (bid+1) + " == " + res)})
+      auction.bid1.call().then(function (res) { assert(res == bid+1, "FAIL: 2nd bid: " + (bid+1) + " == " + res)})
       await auction.placeBid({from: accounts[3], value: 3})
-      auction.Bid1.call().then(function (res) { assert(res == bid+3, "FAIL: 2nd bid: " + (bid+3) + " == " + res)})
+      auction.bid1.call().then(function (res) { assert(res == bid+3, "FAIL: 2nd bid: " + (bid+3) + " == " + res)})
     })
 
     it('Check first vs second bid', async () => {
@@ -650,9 +622,9 @@ contract('AuctionFactory', (accounts) => {
       await auction.placeBid({from: accounts[3], value: 2})
       await auction.placeBid({from: accounts[4], value: 2})
       await auction.placeBid({from: accounts[3], value: 2})
-      let second = await auction.getSecondHighestBid()
+      let second = await getSecondHighestBid(auction)
       assert(second == bid+2+1)
-      let first = await auction.getHighestBid()
+      let first = await getHighestBid(auction)
       assert(first == bid+2+2)
     })
 
