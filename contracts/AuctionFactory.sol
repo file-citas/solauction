@@ -8,7 +8,7 @@ contract AuctionFactory {
     function createAuction(bytes32 salt, uint endBlock, uint reserve, uint limit, string memory ipfsHashAdvAsked) public payable {
         //Auction newAuction = (new Auction).value(msg.value)(msg.sender, endBlock, reserve, limit, ipfsHashAdvAsked);
         bytes32 newsalt = keccak256(abi.encodePacked(salt, msg.sender));
-        Auction newAuction = (new Auction{salt: newsalt, value: msg.value})(msg.sender, endBlock, reserve, limit, ipfsHashAdvAsked);
+        Auction newAuction = (new Auction{salt: newsalt, value: msg.value})(payable(msg.sender), endBlock, reserve, limit, ipfsHashAdvAsked);
         auctions.push(address(newAuction));
     }
 
