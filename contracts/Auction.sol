@@ -4,12 +4,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Auction {
    uint256 constant divfact = 10000;
-   address payable public owner;
-   uint public blockDiff; // if more than x blocks after last bid, auction is closed
+   address payable immutable public owner;
+   uint public immutable blockDiff; // if more than x blocks after last bid, auction is closed
    uint public lastBidBlock; // when the last bid was placed
    uint public funds;
-   uint public reserve;
-   uint public limit;
+   uint public immutable reserve;
+   uint public immutable limit;
    uint public result; // the outcome
    uint256 public rewardPerc; // the reward percentage based on outcome [0;1]
    string public ipfsHashAdvAsked;
@@ -19,7 +19,7 @@ contract Auction {
    address payable public bidder0; // highest bidder
    address payable public bidder1; // second highest bidder
    mapping(address => uint256) public fundsByBidder;
-   address public tokenAddress;
+   address immutable public tokenAddress;
 
    // state
    bool public adviced; // winner can only give advice once
