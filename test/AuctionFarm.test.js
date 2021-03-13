@@ -132,6 +132,9 @@ contract('AuctionFactory', (accounts) => {
     await auctionFactory.createAuction(DAI_ADDRESS, blockDiff, reserve, limit, advAsked, {from: accounts[0]})
     const auctions = await auctionFactory.allAuctions()
     let auction = await Auction.at(auctions[auctions.length-1])
+    let implementation = await auctionFactory.implementation.call()
+    //console.log("I: " + implementation + ", A: " + auction.address)
+    assert(auctionFactory.isClone(implementation, auction.address))
     await daiContract.methods
       .approve(auction.address, funds).send({from: accounts[0]})
     await auction.addFunds(funds)
