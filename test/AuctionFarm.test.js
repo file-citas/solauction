@@ -128,8 +128,8 @@ contract('AuctionFactory', (accounts) => {
   }
 
   async function createNewAuction() {
-    salt = await getSalt()
-    await auctionFactory.createAuction(salt, DAI_ADDRESS, blockDiff, reserve, limit, advAsked, {from: accounts[0]})
+    //salt = await getSalt()
+    await auctionFactory.createAuction(DAI_ADDRESS, blockDiff, reserve, limit, advAsked, {from: accounts[0]})
     const auctions = await auctionFactory.allAuctions()
     let auction = await Auction.at(auctions[auctions.length-1])
     await daiContract.methods

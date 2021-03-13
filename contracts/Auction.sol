@@ -1,15 +1,16 @@
 pragma solidity >=0.4.22 <0.9.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/proxy/Initializable.sol";
 
-contract Auction {
+contract Auction is Initializable {
    uint256 constant divfact = 10000;
-   address payable immutable public owner;
-   uint public immutable blockDiff; // if more than x blocks after last bid, auction is closed
+   address payable public owner;
+   uint public blockDiff; // if more than x blocks after last bid, auction is closed
    uint public lastBidBlock; // when the last bid was placed
    uint public funds;
-   uint public immutable reserve;
-   uint public immutable limit;
+   uint public reserve;
+   uint public limit;
    uint public result; // the outcome
    uint256 public rewardPerc; // the reward percentage based on outcome [0;1]
    string public ipfsHashAdvAsked;
@@ -19,7 +20,7 @@ contract Auction {
    address payable public bidder0; // highest bidder
    address payable public bidder1; // second highest bidder
    mapping(address => uint256) public fundsByBidder;
-   address immutable public tokenAddress;
+   address public tokenAddress;
 
    // state
    bool public adviced; // winner can only give advice once
@@ -27,7 +28,8 @@ contract Auction {
    bool public winnerHasWithdrawn; // winner should only get money once
    bool public resultReported; // owner can only report the result once
 
-   constructor(address payable _owner, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable {
+   //constructor(address payable _owner, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable {
+   function initialize(address payable _owner, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable public {
       uint32 size;
       require(_limit > 0, "Need Limit");
       require(_limit>_reserve, "Limit must be higher then reserve");
