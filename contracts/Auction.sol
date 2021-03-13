@@ -1,5 +1,7 @@
 pragma solidity >=0.4.22 <0.9.0;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 contract Auction {
    uint256 constant divfact = 10000;
    address payable public owner;
@@ -17,6 +19,7 @@ contract Auction {
    address payable public bidder0; // highest bidder
    address payable public bidder1; // second highest bidder
    mapping(address => uint256) public fundsByBidder;
+   address public tokenAddress;
 
    // state
    bool public adviced; // winner can only give advice once
@@ -24,40 +27,59 @@ contract Auction {
    bool public winnerHasWithdrawn; // winner should only get money once
    bool public resultReported; // owner can only report the result once
 
-   constructor(address payable _owner, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable {
-      require(msg.value > 0, "Need Funds");
+   constructor(address payable _owner, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable {
+      uint32 size;
       require(_limit > 0, "Need Limit");
       require(_limit>_reserve, "Limit must be higher then reserve");
       require(_blockDiff > 0, "Need block diff > 0");
       require(_owner != address(0), "Invalid owner");
+      assembly {
+        size := extcodesize(_tokenAddress)
+      }
+      require(size > 0, "Invalid token address");
 
+      tokenAddress = _tokenAddress;
       owner = _owner;
       blockDiff = _blockDiff;
-      funds = msg.value;
       reserve = _reserve;
       limit = _limit;
       ipfsHashAdvAsked = _ipfsHashAdvAsked;
       // TODO: should auction start on first bid?
    }
 
-   function placeBid()
+   function addFunds(uint _funds)
+   onlyOwner
+   hasNoFunds
+   payable
+   public
+   {
+      IERC20 token = IERC20(tokenAddress);
+      token.transferFrom(msg.sender, address(this), _funds);
+      funds = _funds;
+   }
+
+   function placeBid(uint amount)
       public
       payable
       onlyBeforeEnd
       onlyNotOwner
+      hasFunds
       returns (bool success)
       {
-         require(msg.value > 0, "Bid too low");
-         require(msg.value <= limit, "Over limit");
-         require(msg.value > bid0, "Bid too low");
+         require(amount > 0, "Bid too low");
+         require(amount <= limit, "Over limit");
+         require(amount > bid0, "Bid too low");
 
+         IERC20 token = IERC20(tokenAddress);
+         token.transferFrom(msg.sender, address(this), amount);
          // pay back second highest bid
          if (bidder0 != payable(0)) {
             bid1 = bid0;
-            assert(bidder0.send(bid0));
+            token.transferFrom(address(this), bidder0, bid0);
+            //assert(bidder0.send(bid0));
          }
          bidder0 = payable(msg.sender);
-         bid0 = msg.value;
+         bid0 = amount;
          lastBidBlock = block.number;
 
          return true;
@@ -87,10 +109,10 @@ contract Auction {
       onlyAfterEnd
       onlyBeforeResultReported
       onlyReserveMet
+      hasFunds
       public
       returns (bool success)
       {
-         require(_result >= reserve, "Result below reserve");
          require(_result <= limit, "Result over limit");
          result = _result;
          // TODO: How to calculate the factor?
@@ -103,11 +125,14 @@ contract Auction {
    function withdrawFunds()
       onlyOwner
       onlyAfterEnd
-      onlyBeforeFirstBid
+      onlyReserveNotMet
+      hasFunds
       public
       returns (bool success)
       {
-         assert(owner.send(funds));
+         IERC20 token = IERC20(tokenAddress);
+         token.transferFrom(address(this), owner, funds);
+         //assert(owner.send(funds));
          funds = 0;
          return true;
       }
@@ -117,6 +142,7 @@ contract Auction {
       onlyAfterEnd
       onlyAfterResultReported
       onlyReserveMet
+      hasFunds
       public
       returns (bool success)
       {
@@ -124,12 +150,14 @@ contract Auction {
          // also: should the winner be allowed to change the advice?
          if(!adviced && msg.sender == bidder0) {
             uint256 withdrawalAmount = rewardPerc*(uint256(funds))/(divfact);
-            assert(payable(msg.sender).send(withdrawalAmount));
-            funds = 0;
+            IERC20 token = IERC20(tokenAddress);
+            token.transferFrom(address(this), payable(msg.sender), withdrawalAmount);
+            //assert(payable(msg.sender).send(withdrawalAmount));
             ipfsHashAdvGiven = _ipfsHashAdvGiven;
             adviced = true;
-            // TODO: burn or transfer to some other entity
+            // TODO: burn token, is that even possible with dai?
             //require( burn(funds - withdrawalAmount));
+            funds = 0;
          }
          return true;
       }
@@ -137,6 +165,7 @@ contract Auction {
    function withdraw()
       onlyAfterEnd
       onlyAfterFirstBid
+      hasFunds
       public
       returns (bool success)
       {
@@ -144,18 +173,24 @@ contract Auction {
 
          if (reserve > bid0) {
             // if reserve is not met, everyone gets their money back
-            assert(bidder0.send(bid0));
+            //assert(bidder0.send(bid0));
+            IERC20 token = IERC20(tokenAddress);
+            token.transferFrom(address(this), bidder0, bid0);
          } else {
             if (msg.sender == owner) {
                // Owner gets second highest
                if(!ownerHasWithdrawn) {
-                  require(owner.send(max(reserve, bid1)));
+                  IERC20 token = IERC20(tokenAddress);
+                  token.transferFrom(address(this), owner, max(reserve, bid1));
+                  //require(owner.send(max(reserve, bid1)));
                   ownerHasWithdrawn = true;
                }
             } else if (msg.sender == bidder0) {
                // highest bidder gets diff to second highest bid back
                if(!winnerHasWithdrawn) {
-                  require(bidder0.send(bid0 - max(reserve, bid1)));
+                  IERC20 token = IERC20(tokenAddress);
+                  token.transferFrom(address(this), bidder0, bid0 - max(reserve, bid1));
+                  //require(bidder0.send(bid0 - max(reserve, bid1)));
                   winnerHasWithdrawn = true;
                }
             }
@@ -163,6 +198,16 @@ contract Auction {
 
          return true;
       }
+
+   modifier hasFunds {
+      require(funds > 0, "no funds");
+      _;
+   }
+
+   modifier hasNoFunds {
+      require(funds == 0, "already has funds");
+      _;
+   }
 
    modifier onlyOwner {
       require(msg.sender == owner, "not owner");
@@ -195,8 +240,13 @@ contract Auction {
       _;
    }
 
+   modifier onlyReserveNotMet {
+      require(bid0 < reserve, "reserve met");
+      _;
+   }
+
    modifier onlyReserveMet {
-      require(bid0 > reserve, "reserve not met");
+      require(bid0 >= reserve, "reserve not met");
       _;
    }
 
@@ -211,5 +261,3 @@ contract Auction {
    }
 
 }
-
-

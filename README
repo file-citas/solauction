@@ -1,0 +1,6 @@
+https://medium.com/ethereum-grid/forking-ethereum-mainnet-mint-your-own-dai-d8b62a82b3f7
+export USER_ADDRESS=$(yarn --silent getAddress)
+export ETHEREUM_NODE=https://mainnet.infura.io/v3/03a9175ca7b94f2aa3bf74ed5bf0ceb5
+yarn ganache
+
+--> update USER_ADDR in test
