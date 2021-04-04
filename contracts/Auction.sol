@@ -18,8 +18,6 @@ contract Auction is Initializable {
    uint public bid0; // highest Bid
    uint public bid1; // 2nd highest Bid
    address payable public bidder0; // highest bidder
-   address payable public bidder1; // second highest bidder
-   mapping(address => uint256) public fundsByBidder;
    address public tokenAddress;
 
    // state
