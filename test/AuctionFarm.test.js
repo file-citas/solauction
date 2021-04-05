@@ -1,4 +1,5 @@
 const AuctionFactory = artifacts.require('AuctionFactory')
+const AuctionNft = artifacts.require('AuctionNft')
 const Auction = artifacts.require('Auction')
 const Miner = artifacts.require('Miner')
 const ForceSend = artifacts.require('ForceSend');
@@ -40,7 +41,7 @@ require('chai')
 // USER_ADDRESS and DAI_ADDRESS must be
 // unlocked in ganache-cli using --unlock
 //const { USER_ADDRESS } = process.env;
-const USER_ADDRESS = '0xc21d353ff4ee73c572425697f4f5aad2109fe35b';
+const USER_ADDRESS = '0x5d3a536e4d6dbd6114cc1ead35777bab948e3643';
 const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f';
 const daiContract = new web3.eth.Contract(daiABI, DAI_ADDRESS);
 
@@ -89,6 +90,9 @@ contract('AuctionFactory', (accounts) => {
     blockDiff = 32
     funds = 8000
     auctionFactory = await AuctionFactory.new()
+    aucNftAddress = await auctionFactory.nftAddress()
+    console.log("NFT address " + aucNftAddress)
+    aucNft = await AuctionNft.at(aucNftAddress)
     miner = await Miner.new({from: accounts[9]})
     limit = 8000
     reserve = 64
@@ -108,6 +112,15 @@ contract('AuctionFactory', (accounts) => {
       }
     }
   })
+
+  async function approveAndClaimReward(auction, account) {
+    let tokenId = await auction.nftTokenId.call()
+    let owner = await aucNft.ownerOf(tokenId)
+    if(owner == account) {
+      await aucNft.approve(auction.address, tokenId, {from: account})
+    }
+    await auction.claimReward({from: account})
+  }
 
   async function approveAndBid(auction, account, amount) {
     await daiContract.methods.approve(auction.address, amount).send({from: account})
@@ -282,7 +295,9 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
-        await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
+        await approveAndClaimReward(auction, accounts[i])
       }
 
       for (i = 0; i < n_acc; i++) {
@@ -296,7 +311,7 @@ contract('AuctionFactory', (accounts) => {
           console.log("2nd Highest Bid: " + highestBid2)
           assert.equal(diff, highestBid2, "Fail: Account[" + i + "]")
         } else if(i==n_acc-1) {
-          assert.equal(diff, BigInt(funds*perc) - BigInt(highestBid2),
+          assert(diff == BigInt(funds*perc) - BigInt(highestBid2),
             "FAIL: Account[" + i + "]: " + diff + " == " + (funds*perc) + " - " + highestBid + " + " + highestBid2)
         } else {
           assert.equal(diff, 0, "Fail: Account[" + i + "]")
@@ -359,7 +374,9 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
-        await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
+        await approveAndClaimReward(auction, accounts[i])
       }
 
       for (i = 0; i < n_acc; i++) {
@@ -373,7 +390,7 @@ contract('AuctionFactory', (accounts) => {
           console.log("2nd Highest Bid: " + highestBid2)
           assert.equal(diff, highestBid2, "Fail: Account[" + i + "]")
         } else if(i==n_acc-1) {
-          assert.equal(diff, BigInt(funds*perc) - BigInt(highestBid2),
+          assert(diff == BigInt(funds*perc) - BigInt(highestBid2),
             "FAIL: Account[" + i + "]: " + diff + " == " + (funds*perc) + " - " + highestBid + " + " + highestBid2)
         } else {
           assert.equal(diff, 0, "Fail: Account[" + i + "]")
@@ -437,7 +454,9 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
-        await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
+        await approveAndClaimReward(auction, accounts[i])
       }
 
       for (i = 0; i < n_acc; i++) {
@@ -451,7 +470,7 @@ contract('AuctionFactory', (accounts) => {
           console.log("2nd Highest Bid: " + highestBid2)
           assert.equal(diff, highestBid2, "Fail: Account[" + i + "]")
         } else if(i==n_acc-1) {
-          assert.equal(diff, BigInt(funds) - BigInt(highestBid2),
+          assert(diff == BigInt(funds) - BigInt(highestBid2),
             "FAIL: Account[" + i + "]: " + diff + " == " + (funds) + " - " + highestBid + " + " + highestBid2)
         } else {
           assert.equal(diff, 0, "Fail: Account[" + i + "]")
@@ -517,8 +536,11 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
-        await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
+        await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
+        await approveAndClaimReward(auction, accounts[i])
       }
+      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc-1))})
 
       for (i = 0; i < n_acc; i++) {
         balances1[i] = await getBalance(accounts[i])
@@ -531,7 +553,7 @@ contract('AuctionFactory', (accounts) => {
           console.log("2nd Highest Bid: " + highestBid2)
           assert.equal(diff, highestBid2, "Fail: Account[" + i + "]")
         } else if(i==n_acc-1) {
-          assert.equal(diff, BigInt(funds*perc) - BigInt(highestBid2),
+          assert(diff == BigInt(funds*perc) - BigInt(highestBid2),
             "FAIL: Account[" + i + "]: " + diff + " == " + (funds*perc) + " - " + highestBid + " + " + highestBid2)
         } else {
           assert.equal(diff, 0, "Fail: Account[" + i + "]")

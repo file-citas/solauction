@@ -1,7 +1,10 @@
 pragma solidity >=0.4.22 <0.9.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+//import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/proxy/Initializable.sol";
+import { AuctionNft } from './AuctionNft.sol';
 
 contract Auction is Initializable {
    uint256 constant divfact = 10000;
@@ -18,7 +21,10 @@ contract Auction is Initializable {
    uint public bid0; // highest Bid
    uint public bid1; // 2nd highest Bid
    address payable public bidder0; // highest bidder
-   address public tokenAddress;
+   address public tokenAddress; // the dai token contract address
+   uint256 public nftTokenId; // the auction token (need this to claim the reward)
+   AuctionNft public aucNft; // the nft token contract
+
 
    // state
    bool public adviced; // winner can only give advice once
@@ -27,7 +33,7 @@ contract Auction is Initializable {
    bool public resultReported; // owner can only report the result once
 
    //constructor(address payable _owner, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable {
-   function initialize(address payable _owner, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable public {
+   function initialize(address payable _owner, AuctionNft _aucNft, uint256 _nftTokenId, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable public {
       uint32 size;
       require(_limit > 0, "Need Limit");
       require(_limit>_reserve, "Limit must be higher then reserve");
@@ -38,7 +44,9 @@ contract Auction is Initializable {
       }
       require(size > 0, "Invalid token address");
 
+      aucNft = _aucNft;
       tokenAddress = _tokenAddress;
+      nftTokenId = _nftTokenId;
       owner = _owner;
       blockDiff = _blockDiff;
       reserve = _reserve;
@@ -76,7 +84,6 @@ contract Auction is Initializable {
          if (bidder0 != payable(0)) {
             bid1 = bid0;
             token.transferFrom(address(this), bidder0, bid0);
-            //assert(bidder0.send(bid0));
          }
          bidder0 = payable(msg.sender);
          bid0 = amount;
@@ -137,30 +144,70 @@ contract Auction is Initializable {
          return true;
       }
 
-   function evaluateAuction(string memory _ipfsHashAdvGiven)
+
+   function giveAdvice(string memory _ipfsHashAdvGiven)
       onlyAfterFirstBid
       onlyAfterEnd
-      onlyAfterResultReported
       onlyReserveMet
       hasFunds
       public
       returns (bool success)
       {
-         // I guess checks on the advice hash are unneccessary since it is in the winners best interest to give valid advice?
-         // also: should the winner be allowed to change the advice?
          if(!adviced && msg.sender == bidder0) {
+            ipfsHashAdvGiven = _ipfsHashAdvGiven;
+            aucNft.setAdvice(nftTokenId, ipfsHashAdvGiven);
+            adviced = true;
+            // transfer nft token to current highest bidder
+            aucNft.approve(msg.sender, nftTokenId);
+            aucNft.safeTransferFrom(address(this), msg.sender, nftTokenId);
+         }
+         return true;
+      }
+
+   function claimReward()
+      onlyAfterResultReported
+      public
+      returns (bool success)
+      {
+         if(msg.sender == aucNft.ownerOf(nftTokenId)) {
+            // TODO: what should happen to the nft after reward is paid, should it be burned?
+            aucNft.burn(nftTokenId);
             uint256 withdrawalAmount = rewardPerc*(uint256(funds))/(divfact);
             IERC20 token = IERC20(tokenAddress);
             token.transferFrom(address(this), payable(msg.sender), withdrawalAmount);
-            //assert(payable(msg.sender).send(withdrawalAmount));
-            ipfsHashAdvGiven = _ipfsHashAdvGiven;
-            adviced = true;
             // TODO: burn token, is that even possible with dai?
             //require( burn(funds - withdrawalAmount));
             funds = 0;
          }
          return true;
       }
+
+// deprecated
+//   function evaluateAuction(string memory _ipfsHashAdvGiven)
+//      onlyAfterFirstBid
+//      onlyAfterEnd
+//      onlyAfterResultReported
+//      onlyReserveMet
+//      hasFunds
+//      public
+//      returns (bool success)
+//      {
+//         // I guess checks on the advice hash are unneccessary since it is in the winners best interest to give valid advice?
+//         // also: should the winner be allowed to change the advice?
+//         if(!adviced && msg.sender == bidder0) {
+//            uint256 withdrawalAmount = rewardPerc*(uint256(funds))/(divfact);
+//            IERC20 token = IERC20(tokenAddress);
+//            token.transferFrom(address(this), payable(msg.sender), withdrawalAmount);
+//            //assert(payable(msg.sender).send(withdrawalAmount));
+//            ipfsHashAdvGiven = _ipfsHashAdvGiven;
+//            //aucNft.setAdvice(nftTokenId, ipfsHashAdvGiven);
+//            adviced = true;
+//            // TODO: burn token, is that even possible with dai?
+//            //require( burn(funds - withdrawalAmount));
+//            funds = 0;
+//         }
+//         return true;
+//      }
 
    function withdraw()
       onlyAfterEnd
@@ -198,6 +245,11 @@ contract Auction is Initializable {
 
          return true;
       }
+
+   //// TODO: check why this is important
+   //function onERC721Received(address, address, uint256, bytes memory) public virtual override returns (bytes4) {
+   //   return this.onERC721Received.selector;
+   //}
 
    modifier hasFunds {
       require(funds > 0, "no funds");

@@ -1,12 +1,15 @@
 pragma solidity >=0.4.22 <0.9.0;
 
 import { Auction } from './Auction.sol';
+import { AuctionNft } from './AuctionNft.sol';
 
 contract AuctionFactory {
+    AuctionNft immutable public aucNft; // the nft token contract
     address immutable public implementation;
     address[] public auctions;
 
     constructor() {
+        aucNft = new AuctionNft();
         implementation = address(new Auction());
     }
 
@@ -59,13 +62,23 @@ contract AuctionFactory {
         }
         require(size > 0, "Invalid token address");
         address clone = createClone(implementation);
-        Auction(clone).initialize(payable(msg.sender), tokenAddress, blockDiff, reserve, limit, ipfsHashAdvAsked);
+        uint256 nftTokenId = aucNft.mintNft(clone, ipfsHashAdvAsked); // mint token to auction (will be transferred to highest bidder)
+        Auction(clone).initialize(payable(msg.sender), aucNft, nftTokenId, tokenAddress, blockDiff, reserve, limit, ipfsHashAdvAsked);
         auctions.push(clone);
         //Auction newAuction = (new Auction).value(msg.value)(msg.sender, blockDiff, reserve, limit, ipfsHashAdvAsked);
         //bytes32 newsalt = keccak256(abi.encodePacked(salt, msg.sender));
         //Auction newAuction = (new Auction{salt: newsalt})(payable(msg.sender), tokenAddress, blockDiff, reserve, limit, ipfsHashAdvAsked);
         //auctions.push(address(newAuction));
     }
+
+    // for testing
+    function nftAddress()
+      view
+      public
+      returns (address)
+      {
+          return address(aucNft);
+      }
 
     function allAuctions()
       view
