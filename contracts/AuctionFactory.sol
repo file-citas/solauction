@@ -65,10 +65,6 @@ contract AuctionFactory {
         uint256 nftTokenId = aucNft.mintNft(clone, ipfsHashAdvAsked); // mint token to auction (will be transferred to highest bidder)
         Auction(clone).initialize(payable(msg.sender), aucNft, nftTokenId, tokenAddress, blockDiff, reserve, limit, ipfsHashAdvAsked);
         auctions.push(clone);
-        //Auction newAuction = (new Auction).value(msg.value)(msg.sender, blockDiff, reserve, limit, ipfsHashAdvAsked);
-        //bytes32 newsalt = keccak256(abi.encodePacked(salt, msg.sender));
-        //Auction newAuction = (new Auction{salt: newsalt})(payable(msg.sender), tokenAddress, blockDiff, reserve, limit, ipfsHashAdvAsked);
-        //auctions.push(address(newAuction));
     }
 
     // for testing
