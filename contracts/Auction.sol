@@ -13,17 +13,12 @@ contract Auction is Initializable {
    uint public funds;
    uint public reserve;
    uint public limit;
-   uint public result; // the outcome
-   uint256 public rewardPerc; // the reward percentage based on outcome [0;1]
-   string public ipfsHashAdvAsked;
-   string public ipfsHashAdvGiven;
    uint public bid0; // highest Bid
    uint public bid1; // 2nd highest Bid
    address payable public bidder0; // highest bidder
    address public tokenAddress; // the dai token contract address
+   address public aucNftAddress; // the nft token contract
    uint256 public nftTokenId; // the auction token (need this to claim the reward)
-   AuctionNft public aucNft; // the nft token contract
-
 
    // state
    bool public adviced; // winner can only give advice once
@@ -31,7 +26,17 @@ contract Auction is Initializable {
    bool public winnerHasWithdrawn; // winner should only get money once
    bool public resultReported; // owner can only report the result once
 
-   function initialize(address payable _owner, AuctionNft _aucNft, uint256 _nftTokenId, address _tokenAddress, uint _blockDiff, uint _reserve, uint _limit, string memory _ipfsHashAdvAsked) payable public {
+   function initialize(
+      address payable _owner,
+      address _aucNftAddress,
+      uint256 _nftTokenId,
+      address _tokenAddress,
+      uint _blockDiff,
+      uint _reserve,
+      uint _limit)
+      payable
+      public
+      {
       uint32 size;
       require(_limit > 0, "Need Limit");
       require(_limit>_reserve, "Limit must be higher then reserve");
@@ -41,15 +46,18 @@ contract Auction is Initializable {
         size := extcodesize(_tokenAddress)
       }
       require(size > 0, "Invalid token address");
+      assembly {
+        size := extcodesize(_aucNftAddress)
+      }
+      require(size > 0, "Invalid aucNft address");
 
-      aucNft = _aucNft;
+      aucNftAddress = _aucNftAddress;
       tokenAddress = _tokenAddress;
       nftTokenId = _nftTokenId;
       owner = _owner;
       blockDiff = _blockDiff;
       reserve = _reserve;
       limit = _limit;
-      ipfsHashAdvAsked = _ipfsHashAdvAsked;
       // TODO: should auction start on first bid?
    }
 
@@ -108,24 +116,24 @@ contract Auction is Initializable {
          return a;
       }
 
-   function reportResult(uint256 _result)
-      onlyAfterFirstBid
-      onlyOwner
-      onlyAfterEnd
-      onlyBeforeResultReported
-      onlyReserveMet
-      hasFunds
-      public
-      returns (bool success)
-      {
-         require(_result <= limit, "Result over limit");
-         result = _result;
-         // TODO: How to calculate the factor?
-         // penalize only in one direction?
-         rewardPerc = uint256(min(bid0, result))*(divfact)/(uint256(bid0));
-         resultReported = true;
-         return true;
-      }
+   //function reportResult(uint256 _result)
+   //   onlyAfterFirstBid
+   //   onlyOwner
+   //   onlyAfterEnd
+   //   onlyBeforeResultReported
+   //   onlyReserveMet
+   //   hasFunds
+   //   public
+   //   returns (bool success)
+   //   {
+   //      require(_result <= limit, "Result over limit");
+   //      result = _result;
+   //      // TODO: How to calculate the factor?
+   //      // penalize only in one direction?
+   //      rewardPerc = uint256(min(bid0, result))*(divfact)/(uint256(bid0));
+   //      resultReported = true;
+   //      return true;
+   //   }
 
    function withdrawFunds()
       onlyOwner
@@ -151,8 +159,8 @@ contract Auction is Initializable {
       returns (bool success)
       {
          if(!adviced && msg.sender == bidder0) {
-            ipfsHashAdvGiven = _ipfsHashAdvGiven;
-            aucNft.setAdvice(nftTokenId, ipfsHashAdvGiven);
+            AuctionNft aucNft = AuctionNft(aucNftAddress);
+            aucNft.setAdvice(nftTokenId, _ipfsHashAdvGiven);
             adviced = true;
             // transfer nft token to current highest bidder
             aucNft.approve(msg.sender, nftTokenId);
@@ -162,18 +170,26 @@ contract Auction is Initializable {
       }
 
    function claimReward()
-      onlyAfterResultReported
+      //onlyAfterResultReported
       public
       returns (bool success)
       {
+         AuctionNft aucNft = AuctionNft(aucNftAddress);
+         uint256 result = aucNft.getResult(nftTokenId);
+         require(result <= limit, "Result over limit");
          if(msg.sender == aucNft.ownerOf(nftTokenId)) {
             // TODO: what should happen to the nft after reward is paid, should it be burned?
-            aucNft.burn(nftTokenId);
+            // aucNft.burn(nftTokenId);
+            // send token back to auction owner so that he can claim the upstream reward
+            aucNft.safeTransferFrom(address(this), owner, nftTokenId);
+            // TODO: How to calculate the factor?
+            // penalize only in one direction?
+            uint256 rewardPerc = uint256(min(bid0, result))*(divfact)/(uint256(bid0));
             uint256 withdrawalAmount = rewardPerc*(uint256(funds))/(divfact);
             IERC20 token = IERC20(tokenAddress);
             token.transferFrom(address(this), payable(msg.sender), withdrawalAmount);
-            // TODO: burn token, is that even possible with dai?
-            //require( burn(funds - withdrawalAmount));
+            // send remaining funds back to auction owner
+            token.transferFrom(address(this), owner, funds - withdrawalAmount);
             funds = 0;
          }
          return true;

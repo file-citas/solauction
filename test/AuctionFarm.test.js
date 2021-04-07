@@ -1,6 +1,7 @@
 const AuctionFactory = artifacts.require('AuctionFactory')
 const AuctionNft = artifacts.require('AuctionNft')
 const Auction = artifacts.require('Auction')
+const Oracle = artifacts.require('Oracle')
 const Miner = artifacts.require('Miner')
 const ForceSend = artifacts.require('ForceSend');
 const { expect } = require('chai');
@@ -41,9 +42,10 @@ require('chai')
 // USER_ADDRESS and DAI_ADDRESS must be
 // unlocked in ganache-cli using --unlock
 //const { USER_ADDRESS } = process.env;
-const USER_ADDRESS = '0x5d3a536e4d6dbd6114cc1ead35777bab948e3643';
+const USER_ADDRESS = '0x956b3240619a86f1f570c85cc02686346b0e3c78';
 const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f';
 const daiContract = new web3.eth.Contract(daiABI, DAI_ADDRESS);
+const eth2dai = '0.01'
 
 contract('Truffle Mint DAI', async (accounts) => {
   it('should send ether to the user address', async () => {
@@ -51,15 +53,15 @@ contract('Truffle Mint DAI', async (accounts) => {
     // Uses ForceSend contract, otherwise sending a normal tx to
     // a contract address that doesn't have a default payable function may revert.
     const forceSend = await ForceSend.new();
-    await forceSend.go(USER_ADDRESS, { value: ether('1') });
+    await forceSend.go(USER_ADDRESS, { value: ether(eth2dai) });
     const ethBalance = await balance.current(USER_ADDRESS);
-    expect(new BN(ethBalance)).to.be.bignumber.least(new BN(ether('1')));
+    expect(new BN(ethBalance)).to.be.bignumber.least(new BN(ether(eth2dai)));
   });
 
   it('should send DAI to first generated account', async () => {
     // Verify dai balance
     const daiBalance = await daiContract.methods.balanceOf(USER_ADDRESS).call();
-    expect(new BN(daiBalance)).to.be.bignumber.least(ether('1'));
+    expect(new BN(daiBalance)).to.be.bignumber.least(ether(eth2dai));
 
     // Send 1 DAI to the first account
     for (const account of accounts.slice(0, 1)) {
@@ -67,14 +69,13 @@ contract('Truffle Mint DAI', async (accounts) => {
       // ganache-cli with flag `--unlock`
       // so we can use the `transfer` method
       await daiContract.methods
-        .transfer(account, ether('1').toString())
+        .transfer(account, ether(eth2dai).toString())
         .send({ from: USER_ADDRESS, gasLimit: 800000 });
       const daiBalance = await daiContract.methods.balanceOf(account).call();
-      expect(new BN(daiBalance)).to.be.bignumber.least(ether('1'));
+      expect(new BN(daiBalance)).to.be.bignumber.least(ether(eth2dai));
     }
   });
 });
-
 
 contract('AuctionFactory', (accounts) => {
   let miner;
@@ -84,15 +85,16 @@ contract('AuctionFactory', (accounts) => {
   let reserve
   let advAsked
   let funds
+  //let aucNft
+  //let aucNftAddress
+
   const { abi:auctionAbi, bytecode:auctionBytecode } = require('../build/contracts/Auction.json')
 
   before(async () => {
     blockDiff = 32
     funds = 8000
     auctionFactory = await AuctionFactory.new()
-    aucNftAddress = await auctionFactory.nftAddress()
-    console.log("NFT address " + aucNftAddress)
-    aucNft = await AuctionNft.at(aucNftAddress)
+    //aucNftAddress = await auctionFactory.nftAddress()
     miner = await Miner.new({from: accounts[9]})
     limit = 8000
     reserve = 64
@@ -103,15 +105,54 @@ contract('AuctionFactory', (accounts) => {
     for(i=0; i<6; i++) {
       account = accounts[i]
       let daiBalance = await daiContract.methods.balanceOf(account).call();
-      if(daiBalance < ether("1")) {
+      if(daiBalance < ether(eth2dai)) {
         await daiContract.methods
-          .transfer(account, ether('1').toString())
+          .transfer(account, ether(eth2dai).toString())
           .send({ from: USER_ADDRESS, gasLimit: 800000 });
         daiBalance = await daiContract.methods.balanceOf(account).call();
         console.log("Account[" + i + "] DAI: " + daiBalance)
       }
     }
   })
+
+  async function getSalt() {
+    let ret = "0x"
+    await web3.eth.getBlock('latest').then(function(b) {
+      ret += b.number.toString(16)
+    })
+    return ret
+  }
+
+  async function createNewAuction() {
+    let aucNft = await AuctionNft.new()
+    let aucNftAddress = aucNft.address
+    let oracle = await Oracle.new()
+    console.log("Oracle address " + oracle.address)
+    let nftTokenId = await aucNft.mintNft.call(accounts[0], oracle.address, advAsked)
+    console.log("Token id " + nftTokenId)
+    nftTokenId = await aucNft.mintNft.call(accounts[0], oracle.address, advAsked)
+    console.log("Token id " + nftTokenId)
+    let oracleAddress = await aucNft.getOracleAddress.call(nftTokenId)
+    console.log("Oracle address2 " + oracleAddress)
+    await auctionFactory.createAuction(
+      nftTokenId,
+      aucNftAddress,
+      DAI_ADDRESS,
+      blockDiff,
+      reserve,
+      limit,
+      {from: accounts[0]})
+    const auctions = await auctionFactory.allAuctions()
+    let auction = await Auction.at(auctions[auctions.length-1])
+    await aucNft.approve(auction.address, nftTokenId, {from: accounts[0]})
+    let implementation = await auctionFactory.implementation.call()
+    //console.log("I: " + implementation + ", A: " + auction.address)
+    assert(auctionFactory.isClone(implementation, auction.address))
+    await daiContract.methods
+      .approve(auction.address, funds).send({from: accounts[0]})
+    await auction.addFunds(funds)
+    return auction
+  }
 
   async function approveAndClaimReward(auction, account) {
     let tokenId = await auction.nftTokenId.call()
@@ -132,26 +173,11 @@ contract('AuctionFactory', (accounts) => {
     return daiBalance
   }
 
-  async function getSalt() {
-    let ret = "0x"
-    await web3.eth.getBlock('latest').then(function(b) {
-      ret += b.number.toString(16)
-    })
-    return ret
-  }
-
-  async function createNewAuction() {
-    //salt = await getSalt()
-    await auctionFactory.createAuction(DAI_ADDRESS, blockDiff, reserve, limit, advAsked, {from: accounts[0]})
-    const auctions = await auctionFactory.allAuctions()
-    let auction = await Auction.at(auctions[auctions.length-1])
-    let implementation = await auctionFactory.implementation.call()
-    //console.log("I: " + implementation + ", A: " + auction.address)
-    assert(auctionFactory.isClone(implementation, auction.address))
-    await daiContract.methods
-      .approve(auction.address, funds).send({from: accounts[0]})
-    await auction.addFunds(funds)
-    return auction
+  async function reportResult(auction, account, result) {
+    let tokenId = await auction.nftTokenId.call()
+    let oracleAddress = await aucNft.getOracleAddress.call(tokenId)
+    let oracle = await Oracle.at(oracleAddress)
+    oracle.reportResult(result)
   }
 
   async function calcGas(receipt) {
@@ -289,9 +315,9 @@ contract('AuctionFactory', (accounts) => {
       // report result
       let res = await getReserve(auction)
       console.log("Reserve: " + res)
-      await auction.reportResult(highestBid*perc)
-      auction.result.call().then(function (res) {console.log("Result: " + res)})
-      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+      await reportResult(auction, accounts[0], highestBid*perc)
+      //auction.result.call().then(function (res) {console.log("Result: " + res)})
+      //auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
@@ -368,9 +394,9 @@ contract('AuctionFactory', (accounts) => {
       // report result
       let res = await getReserve(auction)
       console.log("Reserve: " + res)
-      r = await auction.reportResult(highestBid*perc)
-      auction.result.call().then(function (res) {console.log("Result: " + res)})
-      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+      await reportResult(auction, accounts[0], highestBid*perc)
+      //auction.result.call().then(function (res) {console.log("Result: " + res)})
+      //auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
@@ -441,16 +467,15 @@ contract('AuctionFactory', (accounts) => {
 
       // withdraw bids
       for (i = 0; i < n_acc; i++) {
-        r = await auction.withdraw({from: accounts[i]})
-        await web3.eth.getTransaction(r.tx)
+        await auction.withdraw({from: accounts[i]})
       }
 
       // report result
       let res = await getReserve(auction)
       console.log("Reserve: " + res)
-      await auction.reportResult(highestBid*perc)
-      auction.result.call().then(function (res) {console.log("Result: " + res)})
-      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+      await reportResult(auction, accounts[0], highestBid*perc)
+      //auction.result.call().then(function (res) {console.log("Result: " + res)})
+      //auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
@@ -530,9 +555,9 @@ contract('AuctionFactory', (accounts) => {
       // report result
       let res = await getReserve(auction)
       console.log("Reserve: " + res)
-      await auction.reportResult(highestBid*perc)
-      auction.result.call().then(function (res) {console.log("Result: " + res)})
-      auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
+      await reportResult(auction, accounts[0], highestBid*perc)
+      //auction.result.call().then(function (res) {console.log("Result: " + res)})
+      //auction.rewardPerc.call().then(function (res) {console.log("Reward Perc: " + res)})
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
@@ -735,7 +760,6 @@ contract('AuctionFactory', (accounts) => {
     })
 
     it('Check placeBid n bid repeat same', async () => {
-      var r = 0
       var diff = 0
       var n_acc = 2
       var n_rounds = 16
@@ -783,7 +807,6 @@ contract('AuctionFactory', (accounts) => {
 
     it('Check placeBid n bid repeat interleave', async () => {
       var highestBidder = 0
-      var r = 0
       var diff = 0
       var n_acc = 3
       var n_rounds = 16

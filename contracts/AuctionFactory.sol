@@ -1,15 +1,15 @@
 pragma solidity >=0.4.22 <0.9.0;
 
 import { Auction } from './Auction.sol';
-import { AuctionNft } from './AuctionNft.sol';
+//import { AuctionNft } from './AuctionNft.sol';
 
 contract AuctionFactory {
-    AuctionNft immutable public aucNft; // the nft token contract
+    //AuctionNft immutable public aucNft; // the nft token contract
     address immutable public implementation;
     address[] public auctions;
 
     constructor() {
-        aucNft = new AuctionNft();
+        //aucNft = new AuctionNft();
         implementation = address(new Auction());
     }
 
@@ -50,7 +50,16 @@ contract AuctionFactory {
         }
     }
 
-    function createAuction(address tokenAddress, uint blockDiff, uint reserve, uint limit, string memory ipfsHashAdvAsked) public payable {
+    function createAuction(
+        uint256 nftTokenId,
+        address aucNftAddress,
+        address tokenAddress,
+        uint blockDiff,
+        uint reserve,
+        uint limit)
+        public
+        payable
+        {
         // TODO: where should this be done? in initialize, here or both?
         uint32 size;
         require(limit > 0, "Need Limit");
@@ -61,20 +70,31 @@ contract AuctionFactory {
             size := extcodesize(tokenAddress)
         }
         require(size > 0, "Invalid token address");
+        assembly {
+            size := extcodesize(aucNftAddress)
+        }
+        require(size > 0, "Invalid aucNft address");
         address clone = createClone(implementation);
-        uint256 nftTokenId = aucNft.mintNft(clone, ipfsHashAdvAsked); // mint token to auction (will be transferred to highest bidder)
-        Auction(clone).initialize(payable(msg.sender), aucNft, nftTokenId, tokenAddress, blockDiff, reserve, limit, ipfsHashAdvAsked);
+        //uint256 nftTokenId = aucNft.mintNft(clone, ipfsHashAdvAsked); // mint token to auction (will be transferred to highest bidder)
+        Auction(clone).initialize(
+            payable(msg.sender),
+            aucNftAddress,
+            nftTokenId,
+            tokenAddress,
+            blockDiff,
+            reserve,
+            limit);
         auctions.push(clone);
     }
 
     // for testing
-    function nftAddress()
-      view
-      public
-      returns (address)
-      {
-          return address(aucNft);
-      }
+    //function nftAddress()
+    //  view
+    //  public
+    //  returns (address)
+    //  {
+    //      return address(aucNft);
+    //  }
 
     function allAuctions()
       view
