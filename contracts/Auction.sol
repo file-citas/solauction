@@ -3,9 +3,11 @@ pragma solidity >=0.4.22 <0.9.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/proxy/Initializable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+
 import { AuctionNft } from './AuctionNft.sol';
 
-contract Auction is Initializable {
+contract Auction is Initializable, IERC721Receiver {
    uint256 constant divfact = 10000;
    address payable public owner;
    uint public blockDiff; // if more than x blocks after last bid, auction is closed
@@ -50,7 +52,9 @@ contract Auction is Initializable {
         size := extcodesize(_aucNftAddress)
       }
       require(size > 0, "Invalid aucNft address");
-
+      AuctionNft aucNft = AuctionNft(_aucNftAddress);
+      require(address(this) == aucNft.ownerOf(_nftTokenId), "Token not owned");
+      // Note: we could check whether the token is in a good state, e.g. no result reported yet, valid oracle, etc
       aucNftAddress = _aucNftAddress;
       tokenAddress = _tokenAddress;
       nftTokenId = _nftTokenId;
@@ -135,6 +139,17 @@ contract Auction is Initializable {
    //      return true;
    //   }
 
+   function getWinner()
+      onlyAfterFirstBid
+      onlyAfterEnd
+      onlyReserveMet
+      view
+      public
+      returns (address)
+      {
+         return bidder0;
+      }
+
    function withdrawFunds()
       onlyOwner
       onlyAfterEnd
@@ -150,7 +165,7 @@ contract Auction is Initializable {
       }
 
 
-   function giveAdvice(string memory _ipfsHashAdvGiven)
+   function claimToken()
       onlyAfterFirstBid
       onlyAfterEnd
       onlyReserveMet
@@ -158,10 +173,8 @@ contract Auction is Initializable {
       public
       returns (bool success)
       {
-         if(!adviced && msg.sender == bidder0) {
+         if(msg.sender == bidder0) {
             AuctionNft aucNft = AuctionNft(aucNftAddress);
-            aucNft.setAdvice(nftTokenId, _ipfsHashAdvGiven);
-            adviced = true;
             // transfer nft token to current highest bidder
             aucNft.approve(msg.sender, nftTokenId);
             aucNft.safeTransferFrom(address(this), msg.sender, nftTokenId);
@@ -170,7 +183,6 @@ contract Auction is Initializable {
       }
 
    function claimReward()
-      //onlyAfterResultReported
       public
       returns (bool success)
       {
@@ -178,10 +190,8 @@ contract Auction is Initializable {
          uint256 result = aucNft.getResult(nftTokenId);
          require(result <= limit, "Result over limit");
          if(msg.sender == aucNft.ownerOf(nftTokenId)) {
-            // TODO: what should happen to the nft after reward is paid, should it be burned?
-            // aucNft.burn(nftTokenId);
             // send token back to auction owner so that he can claim the upstream reward
-            aucNft.safeTransferFrom(address(this), owner, nftTokenId);
+            aucNft.safeTransferFrom(msg.sender, owner, nftTokenId);
             // TODO: How to calculate the factor?
             // penalize only in one direction?
             uint256 rewardPerc = uint256(min(bid0, result))*(divfact)/(uint256(bid0));
@@ -228,6 +238,11 @@ contract Auction is Initializable {
 
          return true;
       }
+
+   // TODO: check why this is important
+   function onERC721Received(address, address, uint256, bytes memory) public virtual override returns (bytes4) {
+      return this.onERC721Received.selector;
+   }
 
    modifier hasFunds {
       require(funds > 0, "no funds");

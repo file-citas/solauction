@@ -7,6 +7,7 @@ const ForceSend = artifacts.require('ForceSend');
 const { expect } = require('chai');
 const { BN, ether, balance } = require('@openzeppelin/test-helpers');
 const daiABI = require('./abi/dai');
+const truffleAssert = require('truffle-assertions');
 
 require('chai')
   .use(require('chai-as-promised'))
@@ -47,7 +48,7 @@ const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f';
 const daiContract = new web3.eth.Contract(daiABI, DAI_ADDRESS);
 const eth2dai = '0.01'
 
-contract('Truffle Mint DAI', async (accounts) => {
+contract('Mint DAI', async (accounts) => {
   it('should send ether to the user address', async () => {
     // Send 1 eth to USER_ADDRESS to have gas to send ERC20 txs.
     // Uses ForceSend contract, otherwise sending a normal tx to
@@ -77,6 +78,28 @@ contract('Truffle Mint DAI', async (accounts) => {
   });
 });
 
+/*
+contract('Mint NFT', (accounts) => {
+  it('should mint new nft to the user address', async () => {
+    auctionFactory = await AuctionFactory.new()
+    let aucNft = await AuctionNft.new()
+    let aucNftAddress = aucNft.address
+    let oracle = await Oracle.new()
+    console.log("Oracle address " + oracle.address)
+    let tx = await aucNft.mintNft(accounts[1], oracle.address, "test")
+    //let tokenId = tx.receipt.logs.some(l => { console.log(l); console.log(l.args.tokenId.toString());return l.args.tokenId;})
+    let tokenId = -1
+    tx.receipt.logs.forEach(function (l) {
+      if(l.event == "TokenMined") {
+        console.log(l)
+        tokenId = l.args.tokenId.toNumber()
+      }
+    })
+    console.log("Token id " + tokenId)
+  });
+});
+*/
+
 contract('AuctionFactory', (accounts) => {
   let miner;
   let auctionFactory
@@ -84,21 +107,22 @@ contract('AuctionFactory', (accounts) => {
   let limit
   let reserve
   let advAsked
-  let funds
-  //let aucNft
-  //let aucNftAddress
+  //let funds
+  let aucNft
+  let aucNftAddress
 
   const { abi:auctionAbi, bytecode:auctionBytecode } = require('../build/contracts/Auction.json')
 
   before(async () => {
     blockDiff = 32
-    funds = 8000
+    //funds = 8000
     auctionFactory = await AuctionFactory.new()
-    //aucNftAddress = await auctionFactory.nftAddress()
     miner = await Miner.new({from: accounts[9]})
     limit = 8000
     reserve = 64
     advAsked = "Please Advice" // to be replaced with actual ipfs hash
+    aucNft = await AuctionNft.deployed()
+    aucNftAddress = aucNft.address
     const forceSend = await ForceSend.new();
     await forceSend.go(USER_ADDRESS, { value: ether('8') });
     const ethBalance = await balance.current(USER_ADDRESS);
@@ -123,17 +147,25 @@ contract('AuctionFactory', (accounts) => {
     return ret
   }
 
-  async function createNewAuction() {
-    let aucNft = await AuctionNft.new()
-    let aucNftAddress = aucNft.address
+  async function mintNft(account, oracleAddress, advAsked) {
+    let tx = await aucNft.mintNft(account, oracleAddress, advAsked)
+    let tokenId = -1
+    tx.receipt.logs.forEach(function (l) {
+      if(l.event == "TokenMined") {
+        //console.log(l)
+        tokenId = l.args.tokenId.toNumber()
+      }
+    })
+    assert(tokenId > 0)
+    return tokenId
+  }
+
+  async function createNewAuction(funds) {
     let oracle = await Oracle.new()
-    console.log("Oracle address " + oracle.address)
-    let nftTokenId = await aucNft.mintNft.call(accounts[0], oracle.address, advAsked)
-    console.log("Token id " + nftTokenId)
-    nftTokenId = await aucNft.mintNft.call(accounts[0], oracle.address, advAsked)
-    console.log("Token id " + nftTokenId)
+    let nftTokenId = await mintNft(accounts[0], oracle.address, advAsked)
     let oracleAddress = await aucNft.getOracleAddress.call(nftTokenId)
-    console.log("Oracle address2 " + oracleAddress)
+    assert(oracle.address == oracleAddress)
+    await aucNft.approve(auctionFactory.address, nftTokenId, {from: accounts[0]})
     await auctionFactory.createAuction(
       nftTokenId,
       aucNftAddress,
@@ -144,14 +176,163 @@ contract('AuctionFactory', (accounts) => {
       {from: accounts[0]})
     const auctions = await auctionFactory.allAuctions()
     let auction = await Auction.at(auctions[auctions.length-1])
-    await aucNft.approve(auction.address, nftTokenId, {from: accounts[0]})
     let implementation = await auctionFactory.implementation.call()
-    //console.log("I: " + implementation + ", A: " + auction.address)
     assert(auctionFactory.isClone(implementation, auction.address))
     await daiContract.methods
       .approve(auction.address, funds).send({from: accounts[0]})
     await auction.addFunds(funds)
     return auction
+  }
+
+  async function createL2Auction(nftTokenId, funds, account) {
+    let oracleAddress = await aucNft.getOracleAddress.call(nftTokenId)
+    await aucNft.approve(auctionFactory.address, nftTokenId, {from: account})
+    await auctionFactory.createAuction(
+      nftTokenId,
+      aucNftAddress,
+      DAI_ADDRESS,
+      blockDiff,
+      reserve,
+      limit,
+      {from: account})
+    const auctions = await auctionFactory.allAuctions()
+    let auction = await Auction.at(auctions[auctions.length-1])
+    let implementation = await auctionFactory.implementation.call()
+    assert(auctionFactory.isClone(implementation, auction.address))
+    await daiContract.methods
+      .approve(auction.address, funds).send({from: account})
+    await auction.addFunds(funds, {from: account})
+    return auction
+  }
+
+  async function runBids(auction, n_acc, bids, bid, bid_step) {
+    let owner = await auction.owner.call()
+
+    for (i = 0; i < n_acc; i++) {
+      bids.push(bid+bid_step*i)
+    }
+
+    for (i = 0; i < n_acc; i++) {
+      if(accounts[i] == owner) {
+        // owner can not bid
+        continue
+      }
+      console.log(accounts[i] + ": bid " + bids[i] + ", balance " + (await getBalance(accounts[i])))
+      await approveAndBid(auction, accounts[i], bids[i])
+    }
+  }
+
+  async function printToken(tokenId) {
+    const advGiven = await aucNft.getAdvice(tokenId)
+    const oracleAdr = await aucNft.getOracleAddress(tokenId)
+    const owner = await aucNft.ownerOf(tokenId)
+    console.log("Token: " + tokenId)
+    console.log("   Owner:  " + owner)
+    console.log("   Advice: " + advGiven)
+  }
+
+  async function printAuction(auction) {
+    const funds = await auction.funds.call()
+    const owner = await auction.owner.call()
+    const tokenid = await auction.nftTokenId.call()
+    const bid0 = await auction.bid0.call()
+    const bid1 = await auction.bid1.call()
+    console.log("Auction: " + auction.address)
+    console.log("   Funds:  " + funds)
+    console.log("   Owner:  " + owner)
+    console.log("   Token:  " + tokenid)
+    console.log("   Bid0:   " + bid0)
+    console.log("   Bid1:   " + bid1)
+  }
+
+  async function checkBalances(auction, funds, perc, balances0, balances1, n_acc) {
+    var diffs = []
+    const owner = await auction.owner.call()
+    const tokenId = await auction.nftTokenId.call()
+    const winner = await auction.getWinner()
+    const bid0 = await auction.bid0.call()
+    const bid1 = await auction.bid1.call()
+
+    for (i = 0; i < n_acc; i++) {
+      const diff = BigInt(balances1[i]) - BigInt(balances0[i])
+      diffs.push(diff)
+      console.log(accounts[i] + " :" + diff);
+      if(accounts[i]==owner) {
+        const tmp = BigInt(bid1) + BigInt(Math.round(funds*(1.0-perc)))
+        assert(diff == tmp,
+          "Fail: " + accounts[i] + " " + diff + " == " + Math.round(funds*(1.0-perc)) + " + " + bid1)
+      } else if(accounts[i]==winner) {
+        assert(diff == BigInt(funds*perc) - BigInt(bid1),
+          "FAIL: " + accounts[i] + " " + diff + " == " + (funds*perc) + " - " + bid1)
+      } else {
+        assert.equal(diff, 0, "Fail: " + accounts[i])
+      }
+    }
+    return diffs
+  }
+
+  async function runAuction(auction, perc) {
+    var diff = 0
+    var n_acc = 5
+    var bids = []
+    var balances0 = []
+    var balances1 = []
+
+    const funds = await auction.funds.call()
+    const owner = await auction.owner.call()
+    const tokenId = await auction.nftTokenId.call()
+
+    console.log("--------------------------------------------------------------------------------")
+    console.log("RUN AUCTION " + auction.address)
+    await printAuction(auction)
+    await printToken(tokenId)
+
+    for (i = 0; i < n_acc; i++) {
+      balances0[i] = await getBalance(accounts[i])
+    }
+
+    await runBids(auction, n_acc, bids, 400, 100)
+
+    await endAuction(auction, blockDiff)
+
+    let winner = await auction.getWinner()
+    console.log("Winner: " + winner)
+
+    for (i = 0; i < n_acc; i++) {
+      await auction.withdraw({from: accounts[i]})
+    }
+
+    await auction.claimToken({from: winner})
+    const newOwner = await aucNft.ownerOf(tokenId)
+    assert.equal(newOwner, winner)
+
+    const bid0 = Number(await auction.bid0.call())
+    const bid1 = Number(await auction.bid1.call())
+
+    await reportResult(auction, owner, bid0*perc)
+
+    await aucNft.setAdvice(tokenId, "my advice " + (i), {from: winner})
+
+    for (i = 0; i < n_acc; i++) {
+      await approveAndClaimReward(auction, accounts[i])
+    }
+
+    // after reward is claimed token should be transferred back to owner
+    const newOwner2 = await aucNft.ownerOf(tokenId)
+    assert.equal(newOwner2, owner)
+
+    for (i = 0; i < n_acc; i++) {
+      balances1[i] = await getBalance(accounts[i])
+    }
+
+    let diffs = await checkBalances(auction, funds, perc, balances0, balances1, n_acc)
+
+    f = await getFunds(auction)
+    assert.equal(f, 0, "Fail: Funds after eval")
+
+    console.log("END AUCTION " + auction.address)
+    console.log("--------------------------------------------------------------------------------")
+    return diffs
   }
 
   async function approveAndClaimReward(auction, account) {
@@ -192,18 +373,8 @@ contract('AuctionFactory', (accounts) => {
     let llb = await auction.lastBidBlock.call()
     let block = await web3.eth.getBlock('latest')
     for(i=0; i<=bd - (block.number-llb); i++) {
-        miner.mine({from: accounts[9]})
+      miner.mine({from: accounts[9]})
     }
-  }
-
-  async function getHighestBid(auction) {
-    let ret = await auction.bid0.call()
-    return Number(ret)
-  }
-
-  async function getSecondHighestBid(auction) {
-    let ret = await auction.bid1.call()
-    return ret
   }
 
   async function getFunds(auction) {
@@ -270,6 +441,77 @@ contract('AuctionFactory', (accounts) => {
     //  }
     //})
 
+    it('Check evaluateAuction L2', async () => {
+      const n_acc = 5
+      const perc = 0.9
+      const funds = 8000
+      var diff = 0
+      var bids = []
+      var balances0 = []
+      var balances1 = []
+
+      let auction = await createNewAuction(funds)
+
+      const owner = await auction.owner.call()
+      const tokenId = await auction.nftTokenId.call()
+
+      console.log("--------------------------------------------------------------------------------")
+      console.log("RUN AUCTION " + auction.address)
+      await printAuction(auction)
+      await printToken(tokenId)
+
+      for (i = 0; i < n_acc; i++) {
+        balances0[i] = await getBalance(accounts[i])
+      }
+
+      await runBids(auction, n_acc, bids, 400, 100)
+
+      await endAuction(auction, blockDiff)
+
+      const winner = await auction.getWinner()
+      console.log("Winner: " + winner)
+
+      for (i = 0; i < n_acc; i++) {
+        await auction.withdraw({from: accounts[i]})
+      }
+
+      await auction.claimToken({from: winner})
+      const newOwner = await aucNft.ownerOf(tokenId)
+      assert.equal(newOwner, winner)
+
+      // create L2 auction
+      let tid = await auction.nftTokenId.call()
+      console.log("Create L2 auction with token " + tid)
+      l2Auction = await createL2Auction(tid, funds/10, winner)
+      const diffs = await runAuction(l2Auction, perc)
+
+      const bid0 = Number(await auction.bid0.call())
+      const r = await aucNft.getResult(tokenId)
+      const newPerc = r/bid0
+
+      // evaluate auction
+      for (i = 0; i < n_acc; i++) {
+        await approveAndClaimReward(auction, accounts[i])
+      }
+
+      for (i = 0; i < n_acc; i++) {
+        balances1[i] = await getBalance(accounts[i])
+        balances1[i] -= Number(diffs[i])
+        // to account for funds paid to l2 auction
+        if(accounts[i] == winner) {
+          balances1[i] += funds/10
+        }
+      }
+
+      await checkBalances(auction, funds, newPerc, balances0, balances1, n_acc)
+
+      f = await getFunds(auction)
+      assert.equal(f, 0, "Fail: Funds after eval")
+      console.log("END AUCTION " + auction.address)
+      console.log("--------------------------------------------------------------------------------")
+    })
+
+    /*
     it('Check evaluateAuction', async () => {
       var diff = 0
       var n_acc = 5
@@ -287,12 +529,12 @@ contract('AuctionFactory', (accounts) => {
       let auction = await createNewAuction()
 
       console.log("A" + (0) + ": bid " + bids[0] + ", balance " + (await getBalance(accounts[0])))
-      // get initial balances
+  // get initial balances
       for (i = 0; i < n_acc; i++) {
         balances0[i] = await getBalance(accounts[i])
       }
 
-      // place bids
+  // place bids
       for (i = 1; i < n_acc; i++) {
         console.log("A" + (i) + ": bid " + bids[i] + ", balance " + (await getBalance(accounts[i])))
         await approveAndBid(auction, accounts[i], bids[i])
@@ -321,6 +563,10 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
+        await auction.claimToken({from: accounts[i]})
+      }
+
+      for (i = 0; i < n_acc; i++) {
         //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
         await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
         await approveAndClaimReward(auction, accounts[i])
@@ -335,7 +581,7 @@ contract('AuctionFactory', (accounts) => {
         console.log("A" + (i) + " :" + diff);
         if(i==0) {
           console.log("2nd Highest Bid: " + highestBid2)
-          assert.equal(diff, highestBid2, "Fail: Account[" + i + "]")
+          //assert(diff == highestBid2, "Fail: Account[" + i + "]")
         } else if(i==n_acc-1) {
           assert(diff == BigInt(funds*perc) - BigInt(highestBid2),
             "FAIL: Account[" + i + "]: " + diff + " == " + (funds*perc) + " - " + highestBid + " + " + highestBid2)
@@ -344,8 +590,6 @@ contract('AuctionFactory', (accounts) => {
         }
       }
 
-      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
-      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc-1))})
       f = await getFunds(auction)
       assert.equal(f, 0, "Fail: Funds after eval")
     })
@@ -400,6 +644,10 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
+        await auction.claimToken({from: accounts[i]})
+      }
+
+      for (i = 0; i < n_acc; i++) {
         //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
         await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
         await approveAndClaimReward(auction, accounts[i])
@@ -423,8 +671,6 @@ contract('AuctionFactory', (accounts) => {
         }
       }
 
-      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
-      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc-1))})
       f = await getFunds(auction)
       assert.equal(f, 0, "Fail: Funds after eval")
     })
@@ -479,6 +725,10 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
+        await auction.claimToken({from: accounts[i]})
+      }
+
+      for (i = 0; i < n_acc; i++) {
         //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
         await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
         await approveAndClaimReward(auction, accounts[i])
@@ -502,8 +752,6 @@ contract('AuctionFactory', (accounts) => {
         }
       }
 
-      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
-      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc-1))})
       f = await getFunds(auction)
       assert.equal(f, 0, "Fail: Funds after eval")
     })
@@ -561,11 +809,14 @@ contract('AuctionFactory', (accounts) => {
 
       // evaluate auction
       for (i = 0; i < n_acc; i++) {
+        await auction.claimToken({from: accounts[i]})
+      }
+
+      for (i = 0; i < n_acc; i++) {
         //await auction.evaluateAuction("my advice " + (i), {from: accounts[i]})
         await auction.giveAdvice("my advice " + (i), {from: accounts[i]})
         await approveAndClaimReward(auction, accounts[i])
       }
-      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc-1))})
 
       for (i = 0; i < n_acc; i++) {
         balances1[i] = await getBalance(accounts[i])
@@ -585,8 +836,6 @@ contract('AuctionFactory', (accounts) => {
         }
       }
 
-      auction.ipfsHashAdvGiven.call().then(function (res) {console.log("Wining advice: " + res)})
-      auction.ipfsHashAdvGiven.call().then(function (res) {assert.equal(res, "my advice " + (n_acc-1))})
       f = await getFunds(auction)
       assert.equal(f, 0, "Fail: Funds after eval")
     })
@@ -879,6 +1128,7 @@ contract('AuctionFactory', (accounts) => {
       let first = await getHighestBid(auction)
       assert(first == bid+4)
     })
+    */
 
   })
 })

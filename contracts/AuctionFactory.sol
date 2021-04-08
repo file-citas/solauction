@@ -1,15 +1,14 @@
 pragma solidity >=0.4.22 <0.9.0;
 
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { Auction } from './Auction.sol';
-//import { AuctionNft } from './AuctionNft.sol';
+import { AuctionNft } from './AuctionNft.sol';
 
-contract AuctionFactory {
-    //AuctionNft immutable public aucNft; // the nft token contract
+contract AuctionFactory is IERC721Receiver {
     address immutable public implementation;
     address[] public auctions;
 
     constructor() {
-        //aucNft = new AuctionNft();
         implementation = address(new Auction());
     }
 
@@ -74,8 +73,10 @@ contract AuctionFactory {
             size := extcodesize(aucNftAddress)
         }
         require(size > 0, "Invalid aucNft address");
+        AuctionNft aucNft = AuctionNft(aucNftAddress);
         address clone = createClone(implementation);
-        //uint256 nftTokenId = aucNft.mintNft(clone, ipfsHashAdvAsked); // mint token to auction (will be transferred to highest bidder)
+        aucNft.safeTransferFrom(msg.sender, clone, nftTokenId);
+        //aucNft.approve(clone, nftTokenId);
         Auction(clone).initialize(
             payable(msg.sender),
             aucNftAddress,
@@ -87,19 +88,16 @@ contract AuctionFactory {
         auctions.push(clone);
     }
 
-    // for testing
-    //function nftAddress()
-    //  view
-    //  public
-    //  returns (address)
-    //  {
-    //      return address(aucNft);
-    //  }
-
     function allAuctions()
       view
       public
       returns (address[] memory) {
         return auctions;
     }
+
+   // TODO: check why this is important
+   function onERC721Received(address, address, uint256, bytes memory) public virtual override returns (bytes4) {
+      return this.onERC721Received.selector;
+   }
+
 }

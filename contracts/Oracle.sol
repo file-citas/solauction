@@ -25,6 +25,8 @@ contract Oracle is Ownable {
       return result;
    }
 
+   // Note: the result can be reported at any time
+   // but it should be in the best interest to report after the auction has ended
    function reportResult(uint256 _result)
    onlyOwner
    public
