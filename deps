@@ -1,0 +1,13 @@
+npm install electron-webpack
+npm install webpack
+npm install mocha
+npm install chai
+npm install @openzeppelin/contracts-ethereum-package
+npm install @openzeppelin/upgrades
+npm install chai-as-promised
+npm install abi-decoder
+npm install @openzeppelin/truffle-upgrades
+npm install @openzeppelin/test-helpers
+npm install @openzeppelin/contracts-upgradeable
+npm install @openzeppelin/contracts
+npm install truffle-assertions
